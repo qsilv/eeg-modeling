@@ -168,7 +168,8 @@ def evaluate_single_subject(i, test_subject, subject_names, all_subjects_data):
             })
             
             # save matrix for visualization later
-            if model_name == 'KNN' and method == 'fi':
+            # GBoosting + none is the top subject-dependent config (66.9%)
+            if model_name == 'GBoosting' and method == 'none':
                 matrix = confusion_matrix(y_test_dep, predictions_dep)
                 saved_matrices[f"{test_subject}_dep"] = matrix
             
@@ -204,7 +205,8 @@ def evaluate_single_subject(i, test_subject, subject_names, all_subjects_data):
             })
             
             # save matrix for visualization later
-            if model_name == 'GBoosting' and method == 'pca':
+            # RF + LCC is the top cross-subject config (58.0%)
+            if model_name == 'RF' and method == 'lcc':
                 matrix = confusion_matrix(y_test_cross, predictions_cross)
                 saved_matrices[f"{test_subject}_cross"] = matrix
                 

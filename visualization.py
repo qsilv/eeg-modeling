@@ -104,7 +104,7 @@ def draw_confusion_matrices():
             xticklabels=['Unfocused', 'Focused'], yticklabels=['Unfocused', 'Focused'],
             ax=ax1
         )
-        ax1.set_title('Subject-Dependent (KNN + Feature Importance)', pad=15)
+        ax1.set_title('Subject-Dependent (GBoosting + All Features)', pad=15)
         ax1.set_ylabel('What the person was actually doing')
         ax1.set_xlabel('What the AI guessed')
         
@@ -117,7 +117,7 @@ def draw_confusion_matrices():
             xticklabels=['Unfocused', 'Focused'], yticklabels=['Unfocused', 'Focused'],
             ax=ax2
         )
-        ax2.set_title('Cross-Subject (GBoosting + PCA)', pad=15)
+        ax2.set_title('Cross-Subject (RF + LCC)', pad=15)
         ax2.set_ylabel('What the person was actually doing')
         ax2.set_xlabel('What the AI guessed')
     
