@@ -24,7 +24,7 @@
 
 \section{Introduction and Motivation}
 
-I recently joined NeuraXtension, a student neuroscience club. The club is currently exploring projects involving brain-computer interfaces (BCIs), and one idea that came up was building an attention state classifier using electroencephalogram (EEG) data. This inspired the topic of my project: I wanted to investigate how well classical machine learning methods perform when constrained to the hardware specifications of the NeuroPawn, a budget consumer EEG headset with 8 channels (F3, Fz, F4, C3, C4, Pz, O1, O2) sampling at 125~Hz.
+I recently joined NeuraXtension, a student neuroscience club. The club is currently exploring projects involving brain-computer interfaces (BCIs), and one idea that came up was building an attention state classifier using electroencephalogram (EEG) data. This inspired the topic of my project: I wanted to investigate how well classical machine learning methods perform when constrained to the hardware specifications of the NeuroPawn, a budget consumer EEG helmet with 8 dry electrodes sampling at 125~Hz. The electrodes can be moved; its default layout is F3, Fz, F4, C3, C4, Pz, O1 and O2.
 
 Most published EEG classification research uses medical-grade equipment with 32--64 electrodes at high sampling rates. The question I set out to answer is whether classical ML techniques can still distinguish between focused and unfocused mental states when limited to just 8 channels and a low sampling rate.
 
@@ -230,6 +230,14 @@ The tasks explain why these sites help: the attentive task is a \emph{lecture wi
 
 \textbf{Recommendation for the NeuroPawn.} The NeuroPawn layout is already a sensible, research-based attention montage, and its results do not depend on eye movements. I would not move electrodes to the forehead or temples based on this dataset. A change supported by both the research and this data is moving \textbf{C3/C4} (over motor cortex, the least relevant to attention) to \textbf{P3/P4} (parietal attention network), while keeping Fz, Pz, O1 and O2.
 
+\textbf{The dry-electrode trade-off.} The NeuroPawn uses dry electrodes, which changes the practical picture:
+\begin{itemize}
+    \item \textbf{Hair is the main obstacle.} Without gel, dry electrodes make poor contact through hair, so hairless sites (the forehead and behind the ears) give much cleaner recordings. This is why many consumer headsets place their electrodes there.
+    \item \textbf{The easy sites are the misleading ones.} The forehead and temples are exactly where eye and muscle activity dominate (Phase~5). The sites that matter most for attention research (Fz, Cz, Pz, P3/P4, O1/O2) are under hair, where dry contact is hardest.
+    \item \textbf{Contact quality comes first.} A well-seated electrode at a second-best site is more useful than a poorly seated one at the ideal site. I would check each channel's signal quality (or impedance, if the software reports it) before every recording, and use comb or spring-pin tips at the back of the head if available. If P3/P4 cannot make good contact, keeping C3/C4 is the safer choice.
+    \item \textbf{Expect lower accuracy.} The MEMA recordings used wet, research-grade electrodes, so the 70\% figures here are an upper estimate for a dry helmet. Per-subject normalization and smoothing should matter even more on noisier data.
+\end{itemize}
+
 \section{Phase 6: Comparison with the Dataset Paper}
 
 The MEMA authors report their own baselines on the same splits (Liu et al., Table~II), but for a harder version of the task: telling apart all \emph{three} states with all 32 channels. To compare like with like, \texttt{paper\_comparison.py} runs my pipeline on the 3-class task, without new tuning.
@@ -274,14 +282,14 @@ For new users, my pipeline nearly matches the paper's best accuracy on single wi
     \item \textbf{Long blocks favour smoothing.} Each trial is one to five minutes of one state. In real use attention changes faster, so smoothing will help less and changes will be noticed a few seconds late.
     \item \textbf{Calibration recording.} Normalization for a new user needs a short recording of that person; here it used all of their data.
     \item \textbf{Offline processing.} The filter used here looks at future samples; a live system needs a filter that only uses the past.
-    \item \textbf{Research-grade data.} The recordings used wet, research-grade electrodes. A real NeuroPawn with dry electrodes will be noisier.
+    \item \textbf{Research-grade data.} The recordings used wet, research-grade electrodes. The NeuroPawn's dry electrodes will be noisier, especially through hair and when the helmet moves, so these results are an upper estimate.
 \end{itemize}
 
-Future work: record with the actual NeuroPawn (ideally with the P3/P4 change) using tasks that differ only in attention, add a short labelled calibration step for new users, and try deep learning models such as EEGNet.
+Future work: record with the actual NeuroPawn helmet using tasks that differ only in attention (for example, the same video watched with ``focus'' versus ``zone out'' instructions), compare the default and P3/P4 layouts on that data while checking dry-electrode contact quality, add a short labelled calibration step for new users, and try deep learning models such as EEGNet.
 
 \section{Conclusion}
 
-This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating a budget 8-channel, 125~Hz headset. In its final form, classical methods reach 70.6\% accuracy for a calibrated user and 69.4\% for a new user, and on the dataset's 3-class task they match or beat the dataset authors' published results for new users. The most useful changes were simple statistical ones: comparing each person to themselves, using longer windows, and averaging over a few seconds. The project also showed how easily results can be inflated, by choosing models on the test set, by reading the wrong channels, or by a task design that lets eye movements and video content stand in for attention. For NeuraXtension, the NeuroPawn layout is a sound starting point. A short calibration recording per user and a parietal (P3/P4) electrode change are the most promising next steps.
+This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating a budget 8-channel, 125~Hz headset. In its final form, classical methods reach 70.6\% accuracy for a calibrated user and 69.4\% for a new user, and on the dataset's 3-class task they match or beat the dataset authors' published results for new users. The most useful changes were simple statistical ones: comparing each person to themselves, using longer windows, and averaging over a few seconds. The project also showed how easily results can be inflated, by choosing models on the test set, by reading the wrong channels, or by a task design that lets eye movements and video content stand in for attention. For NeuraXtension, the NeuroPawn layout is a sound starting point. A short calibration recording per user and a parietal (P3/P4) electrode change are the most promising next steps. Because the helmet uses dry electrodes, good contact at the hair-covered attention sites matters more than squeezing out a better layout, and the real-world accuracy should be measured on the helmet's own recordings.
 
 \newpage
 \appendix

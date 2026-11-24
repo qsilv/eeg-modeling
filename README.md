@@ -1,8 +1,8 @@
 # EEG Attention State Classification
 
 Classical machine learning for classifying focused vs. unfocused mental states
-from EEG, restricted to what a budget 8-channel, 125 Hz headset (NeuroPawn)
-can record. The report is [`eeg_attention_report.pdf`](eeg_attention_report.pdf)
+from EEG, restricted to what a budget 8-channel, 125 Hz headset (NeuroPawn: a helmet
+with 8 movable dry electrodes) can record. The report is [`eeg_attention_report.pdf`](eeg_attention_report.pdf)
 (source: `report.tex`).
 
 ## Dataset
@@ -102,7 +102,8 @@ significant: much of it came from eye activity. Several of the greedy picks (FP2
 T3, T6, TP8) are classic eye/muscle/auditory sites. The attentive task is a lecture
 video and the relaxed task a scenery video with music, so they differ in more than
 attention. The report recommends keeping the NeuroPawn layout, or moving C3/C4 to
-P3/P4.
+P3/P4 if the dry electrodes make good contact there (dry electrodes work best on
+hairless sites, which are exactly the eye/muscle-dominated ones).
 
 **3-class comparison with the dataset paper** (`paper_comparison.py`, accuracy / macro F1,
 smoothed): all 29 EEG electrodes reach 70.4% / 63.3% subject-dependent and 69.1% / 59.3%
