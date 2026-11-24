@@ -36,11 +36,10 @@ python model_training.py       # model selection (grouped CV), training, evaluat
 python visualization.py        # report figures
 python subject_diagnostics.py  # optional: why accuracy differs between subjects
 
-# optional: all 32 channels -> best 8 electrodes, EOG-only check, 3-class paper comparison
+# optional: all 32 channels -> best 8 electrodes and EOG-only check
 python data_processing.py --all-channels
 python channel_selection.py
 python channel_selection.py --remove-eog   # same search with eye-movement signal regressed out
-python paper_comparison.py
 ```
 
 | Step | Output |
@@ -50,7 +49,6 @@ python paper_comparison.py
 | `model_training.py` | `results/metrics/summary.csv`, `per_subject_results.csv`, `cv_*.csv`, `chosen_configs.json`, `confusion_matrices.npz`, `test_predictions.csv.gz` |
 | `visualization.py` | `results/figures/*.png` |
 | `channel_selection.py` | `results/metrics/channel_selection_{greedy,random,test}[_eog_removed].csv`, `results/figures/channel_selection[_eog_removed].png` |
-| `paper_comparison.py` | `results/metrics/paper_comparison.csv` |
 | `subject_diagnostics.py` | `results/metrics/subject_diagnostics.csv`, `diagnostics_correlations.csv`, `results/figures/subject_diagnostics.png` |
 
 ### Methods
@@ -105,10 +103,6 @@ attention. The report recommends keeping the NeuroPawn layout, or moving C3/C4 t
 P3/P4 if the dry electrodes make good contact there (dry electrodes work best on
 hairless sites, which are exactly the eye/muscle-dominated ones).
 
-**3-class comparison with the dataset paper** (`paper_comparison.py`, accuracy / macro F1,
-smoothed): all 29 EEG electrodes reach 70.4% / 63.3% subject-dependent and 69.1% / 59.3%
-cross-subject; the paper's best is 85.1% / 59.6% and 64.8% / 45.1%.
-
 The first version of this project reported 66.9% / 58.0%, using the mislabelled
 columns and picking the best of 20 configurations by test accuracy. Here, no
 configuration is chosen on the test set.
@@ -123,7 +117,6 @@ model_training.py        # grouped-CV model selection, training, evaluation
 visualization.py         # report figures
 subject_diagnostics.py   # per-subject signal strength, typicality, per-round accuracy
 channel_selection.py     # greedy search for the best 8 of the 29 EEG electrodes + EOG check
-paper_comparison.py      # 3-class results comparable to the MEMA paper
 run_pipeline.bat         # runs the main pipeline and diagnostics
 report.tex               # report source -> eeg_attention_report.pdf
 results/figures/         # figures used by the report

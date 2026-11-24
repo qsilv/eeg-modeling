@@ -28,7 +28,7 @@ I recently joined NeuraXtension, a student neuroscience club. The club is curren
 
 Most published EEG classification research uses medical-grade equipment with 32--64 electrodes at high sampling rates. The question I set out to answer is whether classical ML techniques can still distinguish between focused and unfocused mental states when limited to just 8 channels and a low sampling rate.
 
-The project went through several phases, and each one changed my understanding of the results. This report follows them in order: the original pipeline (Phase~1), fixing the method (Phase~2), correcting the electrodes (Phase~3), understanding why some people are harder to read (Phase~4), testing other electrode positions and the role of eye movements (Phase~5), and comparing with the dataset authors' own results (Phase~6). Figure~\ref{fig:phases} summarizes the main numbers.
+The project went through several phases, and each one changed my understanding of the results. This report follows them in order: the original pipeline (Phase~1), fixing the method (Phase~2), correcting the electrodes (Phase~3), understanding why some people are harder to read (Phase~4), and testing other electrode positions and the role of eye movements (Phase~5). Figure~\ref{fig:phases} summarizes the main numbers.
 
 \begin{figure}[H]
     \centering
@@ -238,31 +238,6 @@ The tasks explain why these sites help: the attentive task is a \emph{lecture wi
     \item \textbf{Expect lower accuracy.} The MEMA recordings used wet, research-grade electrodes, so the 70\% figures here are an upper estimate for a dry helmet. Per-subject normalization and smoothing should matter even more on noisier data.
 \end{itemize}
 
-\section{Phase 6: Comparison with the Dataset Paper}
-
-The MEMA authors report their own baselines on the same splits (Liu et al., Table~II), but for a harder version of the task: telling apart all \emph{three} states with all 32 channels. To compare like with like, \texttt{paper\_comparison.py} runs my pipeline on the 3-class task, without new tuning.
-
-\begin{table}[H]
-\centering
-\caption{3-class attention classification, accuracy and macro F1 (\%). For this project: single windows / smoothed. The paper does not state its window length or how it averages results, so the comparison is approximate.}
-\label{tab:paper}
-\small
-\begin{tabular}{lcccc}
-\toprule
- & \multicolumn{2}{c}{Calibrated user} & \multicolumn{2}{c}{New user} \\
-Method & Accuracy & F1 & Accuracy & F1 \\
-\midrule
-Paper, best (EEGNet, a deep network) & 85.1 & 59.6 & 64.8 & 45.1 \\
-Paper, range of 6 methods & 78.7--85.1 & 47.6--59.6 & 56.0--64.8 & 41.9--45.2 \\
-\midrule
-This project, all 29 EEG electrodes & 66.9 / 70.4 & 60.3 / 63.3 & 63.4 / 69.1 & 54.5 / 59.3 \\
-This project, NeuroPawn 8 & 59.5 / 62.1 & 52.6 / 55.1 & 54.5 / 59.4 & 46.6 / 50.3 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-For new users, my pipeline nearly matches the paper's best accuracy on single windows and beats it after smoothing; its F1 score is 9--14 points higher than any method in the paper. For calibrated users, the paper's accuracy is higher, but its F1 is lower or equal. High accuracy with a low F1 usually means a model mostly predicts the two long states and misses the short neutral one; my pipeline handles this better by weighting the classes. With only the NeuroPawn electrodes, the 3-class task is clearly harder.
-
 \section{Summary of Findings}
 
 \begin{enumerate}
@@ -272,7 +247,7 @@ For new users, my pipeline nearly matches the paper's best accuracy on single wi
     \item \textbf{Check the basics:} a wrong column mapping went unnoticed through two phases and changed every result.
     \item \textbf{Eye movements and task design:} part of what separates the states in this dataset is eye movement and the content of the videos, not attention itself. The NeuroPawn layout is less affected by this than electrodes near the eyes and temples.
     \item \textbf{People differ a lot:} accuracy ranges from chance to over 90\%, mainly depending on how distinct and how stable a person's pattern is.
-    \item \textbf{Skepticism of literature benchmarks:} some studies report 91.7\% (Aci et al., 2019) or 99.6\% (Wang \& Kim) on similar tasks. Such numbers often come from splitting overlapping windows of the same recording into training and test sets, which this project avoids by always holding out whole rounds or people. The dataset authors, who also hold out whole rounds and people, report numbers in the same range as this project.
+    \item \textbf{Skepticism of literature benchmarks:} some studies report 91.7\% (Aci et al., 2019) or 99.6\% (Wang \& Kim) on similar tasks. Such numbers often come from splitting overlapping windows of the same recording into training and test sets, which this project avoids by always holding out whole rounds or people.
 \end{enumerate}
 
 \section{Limitations and Future Work}
@@ -289,7 +264,7 @@ Future work: record with the actual NeuroPawn helmet using tasks that differ onl
 
 \section{Conclusion}
 
-This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating a budget 8-channel, 125~Hz headset. In its final form, classical methods reach 70.6\% accuracy for a calibrated user and 69.4\% for a new user, and on the dataset's 3-class task they match or beat the dataset authors' published results for new users. The most useful changes were simple statistical ones: comparing each person to themselves, using longer windows, and averaging over a few seconds. The project also showed how easily results can be inflated, by choosing models on the test set, by reading the wrong channels, or by a task design that lets eye movements and video content stand in for attention. For NeuraXtension, the NeuroPawn layout is a sound starting point. A short calibration recording per user and a parietal (P3/P4) electrode change are the most promising next steps. Because the helmet uses dry electrodes, good contact at the hair-covered attention sites matters more than squeezing out a better layout, and the real-world accuracy should be measured on the helmet's own recordings.
+This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating a budget 8-channel, 125~Hz headset. In its final form, classical methods reach 70.6\% accuracy for a calibrated user and 69.4\% for a new user. The most useful changes were simple statistical ones: comparing each person to themselves, using longer windows, and averaging over a few seconds. The project also showed how easily results can be inflated, by choosing models on the test set, by reading the wrong channels, or by a task design that lets eye movements and video content stand in for attention. For NeuraXtension, the NeuroPawn layout is a sound starting point. A short calibration recording per user and a parietal (P3/P4) electrode change are the most promising next steps. Because the helmet uses dry electrodes, good contact at the hair-covered attention sites matters more than squeezing out a better layout, and the real-world accuracy should be measured on the helmet's own recordings.
 
 \newpage
 \appendix
@@ -314,7 +289,7 @@ This project built an end-to-end pipeline from 90~GB of raw EEG text files to tr
 \textbf{EEG Attention State Classifier: Brain-Computer Interface}
 \begin{itemize}
     \item Built an end-to-end Python pipeline (NumPy, SciPy, scikit-learn, LightGBM) that turns 90~GB of raw 32-channel EEG into an 8-channel, 125~Hz attention classifier matching a budget consumer headset.
-    \item Reached 70.6\% accuracy for calibrated users and 69.4\% for new users (baselines 55.1\% and 52.4\%) using per-subject normalization, tuned windows, model ensembles and causal smoothing; matched or exceeded the dataset authors' published cross-subject results on the 3-class task.
+    \item Reached 70.6\% accuracy for calibrated users and 69.4\% for new users (baselines 55.1\% and 52.4\%) using per-subject normalization, tuned windows, model ensembles and causal smoothing.
     \item Selected models without test-set leakage using grouped and nested cross-validation, comparing 55 pipeline configurations for each of 20 held-out subjects.
     \item Ran an electrode-placement study over 29 EEG channels and used the eye-movement channels to show that part of the apparent signal came from eye activity and task design rather than attention.
     \item Parallelized the evaluation with joblib across 16 CPU threads, completing the full cross-subject model search in about 25 minutes.
