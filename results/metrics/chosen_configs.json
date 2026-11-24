@@ -11,142 +11,142 @@
     {
       "subject": "Subject1",
       "selector": "none",
-      "model": "LightGBM",
-      "params": "500x31",
-      "inner_cv_acc": 0.7316602655880603
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.737468972788677
     },
     {
       "subject": "Subject2",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7203591348871905
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7289730416089703
     },
     {
       "subject": "Subject3",
       "selector": "none",
-      "model": "LogReg",
-      "params": "C=0.01",
-      "inner_cv_acc": 0.7335562756397902
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7366386019061095
     },
     {
       "subject": "Subject4",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7194112040784507
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7260095518033752
     },
     {
       "subject": "Subject5",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7132863319248705
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7195685146968314
     },
     {
       "subject": "Subject6",
       "selector": "none",
-      "model": "LogReg",
-      "params": "C=0.01",
-      "inner_cv_acc": 0.719924311594603
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7266814839672604
     },
     {
       "subject": "Subject7",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7218666034455508
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7275565038722934
     },
     {
       "subject": "Subject8",
       "selector": "none",
-      "model": "LightGBM",
-      "params": "200x15",
-      "inner_cv_acc": 0.7414591823030274
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7462411104211887
     },
     {
       "subject": "Subject9",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7287359327376727
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7349797304125273
     },
     {
       "subject": "Subject10",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7342288312275262
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7347423840464293
     },
     {
       "subject": "Subject11",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7351771479653167
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7409854692368829
     },
     {
       "subject": "Subject12",
       "selector": "none",
-      "model": "LightGBM",
-      "params": "500x31",
-      "inner_cv_acc": 0.7360855655766487
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7441074571348604
     },
     {
       "subject": "Subject13",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7316211383197029
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7365601395614444
     },
     {
       "subject": "Subject14",
       "selector": "none",
-      "model": "LogReg",
-      "params": "C=0.01",
-      "inner_cv_acc": 0.7209117556007508
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7271950961598634
     },
     {
       "subject": "Subject15",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7277089161604169
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7337936813795882
     },
     {
       "subject": "Subject16",
       "selector": "none",
-      "model": "LightGBM",
-      "params": "200x15",
-      "inner_cv_acc": 0.7381795572313189
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7438304788239543
     },
     {
       "subject": "Subject17",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7228484960107405
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7292101801671179
     },
     {
       "subject": "Subject18",
       "selector": "none",
-      "model": "RF",
-      "params": "leaf=10",
-      "inner_cv_acc": 0.7279456687895139
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7355718940103455
     },
     {
       "subject": "Subject19",
       "selector": "none",
-      "model": "LightGBM",
-      "params": "200x15",
-      "inner_cv_acc": 0.7326082260836502
+      "model": "Ensemble",
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7397213141014793
     },
     {
       "subject": "Subject20",
       "selector": "none",
-      "model": "LogReg",
-      "params": "C=0.01",
-      "inner_cv_acc": 0.7210705802484837
+      "model": "Ensemble",
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7291313912671025
     }
   ]
 }

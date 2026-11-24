@@ -24,7 +24,7 @@ sns.set_context('paper', font_scale=1.3)
 
 SCENARIOS = {'subject_dependent': 'Subject-dependent', 'cross_subject': 'Cross-subject'}
 METHOD_ORDER = ['none', 'anova', 'fi', 'lcc', 'pca']
-MODEL_ORDER = ['LDA', 'LogReg', 'KNN', 'RF', 'LightGBM']
+MODEL_ORDER = ['LDA', 'LogReg', 'KNN', 'RF', 'LightGBM', 'Ensemble']
 
 
 def save(fig, name):

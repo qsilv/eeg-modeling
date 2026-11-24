@@ -42,15 +42,15 @@ EPS = 1e-12
 
 # --- loading and windowing ---
 
-def load_trials():
+def load_trials(folder=TRIAL_FOLDER):
     """returns metadata DataFrame and {trial_id: (samples, channels) float32 array}"""
-    metadata = pd.read_csv(os.path.join(TRIAL_FOLDER, 'metadata.csv'))
+    metadata = pd.read_csv(os.path.join(folder, 'metadata.csv'))
     signals = {}
     for subject in metadata.subject.unique():
-        with np.load(os.path.join(TRIAL_FOLDER, f'{subject}.npz')) as data:
+        with np.load(os.path.join(folder, f'{subject}.npz')) as data:
             for key in data.files:
                 signals[f'{subject}_{key}'] = data[key]
-    with open(os.path.join(TRIAL_FOLDER, 'info.txt')) as f:
+    with open(os.path.join(folder, 'info.txt')) as f:
         info = dict(line.strip().split('=', 1) for line in f if '=' in line)
     return metadata, signals, int(info['fs']), info['channels'].split(',')
 

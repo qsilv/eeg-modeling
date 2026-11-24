@@ -6,12 +6,16 @@ match the NeuroPawn headset, decimates 500 Hz -> 125 Hz and band-passes
 0.5-45 Hz. Each trial is stored as one continuous float32 signal; windowing
 happens later in feature_extraction.py so the window length can be tuned.
 
+Run with --all-channels to keep every EEG column instead (used by
+channel_selection.py); that output goes to processed_data/trials_all/.
+
 Output (processed_data/trials/):
     SubjectN.npz    one array per trial, keyed by trial id (e.g. "a1")
     metadata.csv    one row per trial: subject, trial_id, round, state, label,
                     n_samples, duration_s
 """
 
+import argparse
 import os
 import re
 import time
@@ -23,6 +27,7 @@ from scipy import signal
 
 DATA_FOLDER = os.path.join('MEMA Dataset', 'MEMA', 'For_graph')
 OUTPUT_FOLDER = os.path.join('processed_data', 'trials')
+OUTPUT_FOLDER_ALL = os.path.join('processed_data', 'trials_all')
 
 ORIGINAL_HZ = 500
 TARGET_HZ = 125
@@ -31,6 +36,15 @@ DOWNSAMPLE_FACTOR = ORIGINAL_HZ // TARGET_HZ
 # column indices in the 32-column For_graph files
 CHANNEL_COLUMNS = [2, 3, 4, 12, 14, 23, 26, 28]
 CHANNEL_NAMES = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']
+
+# --all-channels: every column except 17, which is constant (no signal). The
+# files carry no channel labels, so columns outside the 8 known ones are named
+# by index (c00 ... c31).
+N_COLUMNS = 32
+CONSTANT_COLUMNS = [17]
+ALL_COLUMNS = [c for c in range(N_COLUMNS) if c not in CONSTANT_COLUMNS]
+ALL_NAMES = [CHANNEL_NAMES[CHANNEL_COLUMNS.index(c)] if c in CHANNEL_COLUMNS else f'c{c:02d}'
+             for c in ALL_COLUMNS]
 
 BANDPASS_HZ = (0.5, 45.0)
 FILTER_ORDER = 4
@@ -50,7 +64,7 @@ def clean_trial(raw):
     return filtered.astype(np.float32)
 
 
-def process_subject(subject):
+def process_subject(subject, columns, output_folder):
     subject_path = os.path.join(DATA_FOLDER, subject)
     trials = {}
     rows = []
@@ -62,7 +76,7 @@ def process_subject(subject):
         trial_key = f'{state}{round_str}'
 
         raw = pd.read_csv(os.path.join(subject_path, filename), header=None,
-                          usecols=CHANNEL_COLUMNS, dtype=np.float64).values
+                          usecols=columns, dtype=np.float64).values
         clean = clean_trial(raw)
         trials[trial_key] = clean
         rows.append({
@@ -75,7 +89,7 @@ def process_subject(subject):
             'duration_s': clean.shape[0] / TARGET_HZ,
         })
 
-    np.savez_compressed(os.path.join(OUTPUT_FOLDER, f'{subject}.npz'), **trials)
+    np.savez_compressed(os.path.join(output_folder, f'{subject}.npz'), **trials)
     print(f'{subject}: {len(trials)} trials, {sum(r["duration_s"] for r in rows) / 60:.1f} min')
     return rows
 
@@ -85,18 +99,28 @@ def subject_sort_key(name):
 
 
 def main():
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--all-channels', action='store_true',
+                        help='keep all 31 non-constant columns (for channel_selection.py)')
+    args = parser.parse_args()
+    if args.all_channels:
+        columns, names, output_folder = ALL_COLUMNS, ALL_NAMES, OUTPUT_FOLDER_ALL
+    else:
+        columns, names, output_folder = CHANNEL_COLUMNS, CHANNEL_NAMES, OUTPUT_FOLDER
+
+    os.makedirs(output_folder, exist_ok=True)
     subjects = sorted((d for d in os.listdir(DATA_FOLDER) if d.startswith('Subject')),
                       key=subject_sort_key)
     print(f'Processing {len(subjects)} subjects from {DATA_FOLDER}')
 
     start = time.time()
-    results = Parallel(n_jobs=4)(delayed(process_subject)(s) for s in subjects)
+    results = Parallel(n_jobs=4)(delayed(process_subject)(s, columns, output_folder)
+                                for s in subjects)
     metadata = pd.DataFrame([row for rows in results for row in rows])
-    metadata.to_csv(os.path.join(OUTPUT_FOLDER, 'metadata.csv'), index=False)
+    metadata.to_csv(os.path.join(output_folder, 'metadata.csv'), index=False)
 
-    with open(os.path.join(OUTPUT_FOLDER, 'info.txt'), 'w') as f:
-        f.write(f'fs={TARGET_HZ}\nchannels={",".join(CHANNEL_NAMES)}\n'
+    with open(os.path.join(output_folder, 'info.txt'), 'w') as f:
+        f.write(f'fs={TARGET_HZ}\nchannels={",".join(names)}\n'
                 f'bandpass={BANDPASS_HZ[0]}-{BANDPASS_HZ[1]} Hz, Butterworth order {FILTER_ORDER}, '
                 f'zero-phase (sosfiltfilt)\n')
 

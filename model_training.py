@@ -33,7 +33,7 @@ from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator, clone
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.feature_selection import SelectFromModel, SelectKBest, f_classif
 from sklearn.feature_selection._base import SelectorMixin
 from sklearn.linear_model import LogisticRegression
@@ -111,13 +111,33 @@ def get_models():
     }
 
 
+# soft-voting ensembles: average the predicted probabilities of their members.
+# In CV they reuse the member predictions, so they cost no extra fits.
+ENSEMBLES = {
+    'LDA+LightGBM': [('LDA', 'shrinkage=auto'), ('LightGBM', '200x15')],
+    'LogReg+RF+LightGBM': [('LogReg', 'C=0.01'), ('RF', 'leaf=10'), ('LightGBM', '200x15')],
+    'LDA+LogReg+RF+LightGBM': [('LDA', 'shrinkage=auto'), ('LogReg', 'C=0.01'),
+                               ('RF', 'leaf=10'), ('LightGBM', '200x15')],
+}
+
+
 def config_name(selector, model, params):
     return f'{model}[{params}]+{selector}'
 
 
+def build_model(model_key):
+    model, params = model_key
+    if model == 'Ensemble':
+        models = get_models()
+        return VotingClassifier([(f'{m}_{i}', clone(models[(m, p)]))
+                                 for i, (m, p) in enumerate(ENSEMBLES[params])],
+                                voting='soft')
+    return clone(get_models()[model_key])
+
+
 def build_pipeline(selector, model_key):
     return Pipeline([('select', clone_or_pass(get_selectors()[selector])),
-                     ('model', clone(get_models()[model_key]))])
+                     ('model', build_model(model_key))])
 
 
 def clone_or_pass(step):
@@ -157,9 +177,14 @@ def evaluate_split(X, y, subjects, trial_ids, train_idx, val_idx, k_smooth):
         else:
             selector = clone(selector).fit(X[train_idx], y[train_idx])
             Xtr, Xva = selector.transform(X[train_idx]), selector.transform(X[val_idx])
-        for (model_name, params), model in get_models().items():
+        probas = {}
+        for key, model in get_models().items():
             model = clone(model).fit(Xtr, y[train_idx])
-            proba = model.predict_proba(Xva)[:, 1]
+            probas[key] = model.predict_proba(Xva)[:, 1]
+        for name, members in ENSEMBLES.items():
+            probas[('Ensemble', name)] = np.mean([probas[m] for m in members], axis=0)
+
+        for (model_name, params), proba in probas.items():
             scores = per_subject_scores(subjects[val_idx], y[val_idx], proba,
                                         trial_ids[val_idx], k_smooth)
             for subject, score in scores.items():
