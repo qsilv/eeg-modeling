@@ -175,6 +175,25 @@ The previous version of this project reached 66.9\% (subject-dependent) and 58.0
 
 Performance varies a lot between people (Figure~\ref{fig:subjects}): smoothed accuracy ranges from 52\% to 92\% in the subject-dependent scenario and from 54\% to 92\% across subjects. All 20 held-out subjects are above the cross-subject baseline, although subject~11 only barely; in the subject-dependent scenario subject~16 stays at chance.
 
+\subsection{Why accuracy differs between subjects}
+
+To understand the spread, \texttt{subject\_diagnostics.py} computes a few descriptive measures per subject (Figure~\ref{fig:diagnostics}). With 20 subjects, the correlations below are indicative rather than conclusive.
+
+\begin{itemize}
+    \item \textbf{The common pattern.} Across subjects, the most consistent difference is \emph{more} theta power over the occipital and parietal electrodes (O1, O2, Pz) during the attentive task, together with higher theta/alpha and theta/beta ratios. The direction is the same in 85--100\% of subjects. Occipital theta is not the textbook attention marker, so part of this signal may come from the task itself (for example, visual demands or eye movements) rather than from attention in general.
+    \item \textbf{Signal strength.} How different the two states look for a person (mean $|d|$ of their 10 most different features) tracks test accuracy closely (Spearman $\rho = 0.75$ subject-dependent, $0.69$ cross-subject). This measure uses all of the person's labels, so it describes rather than explains: for low scorers such as subjects 8, 16 and 19, focused and unfocused recordings simply look alike.
+    \item \textbf{Typicality.} How closely a person's pattern matches the average pattern of the other 19 subjects predicts cross-subject accuracy ($\rho = 0.63$) but not subject-dependent accuracy ($\rho = 0.10$). Subjects 3, 10 and 11 have unusual patterns: subjects 10 and 11 reach 92\% and 78\% with their own model but only 65\% and 54\% with a model trained on others.
+    \item \textbf{Changes within the session.} Holding out each round in turn (right panel) shows that some people only become readable later. Subjects 9 and 15 score about 45--54\% on rounds 1--2 but over 80\% on rounds 3--4. Subject~16 is poor in every round, and their pattern in round 4 even points the other way from rounds 1--3 (correlation $-0.18$). This is why their own model fails (52\%) while the population model does better (66\%).
+    \item \textbf{Noise.} The rate of large-amplitude bursts and the share of high-frequency (muscle) power were not lower for good subjects. A high share of slow frontal power, typical of eye movements and drift, was weakly associated with lower accuracy ($\rho = -0.40$, $p = 0.08$). Subject~8 has the highest value (0.87), the weakest signal, and is poor in every round. Either eye artifacts or not following the task instructions would explain this; the data cannot tell them apart.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{results/figures/subject_diagnostics.png}
+    \caption{Per-subject diagnostics. Left: signal strength vs.\ subject-dependent accuracy. Middle: typicality vs.\ cross-subject accuracy. Right: accuracy of the per-subject pipeline when each round is held out (trained on the other three).}
+    \label{fig:diagnostics}
+\end{figure}
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{results/figures/confusion_matrix.png}

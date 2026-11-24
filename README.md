@@ -31,6 +31,7 @@ python data_processing.py      # raw .txt -> cleaned continuous trials
 python feature_extraction.py   # trials -> windowed features, window-length CV
 python model_training.py       # model selection (grouped CV), training, evaluation
 python visualization.py        # report figures
+python subject_diagnostics.py  # optional: why accuracy differs between subjects
 ```
 
 | Step | Output |
@@ -39,6 +40,7 @@ python visualization.py        # report figures
 | `feature_extraction.py` | `processed_data/features/features_{1,2,4}s.npz`, `results/metrics/window_selection.csv`, `window_choice.json` |
 | `model_training.py` | `results/metrics/summary.csv`, `per_subject_results.csv`, `cv_*.csv`, `chosen_configs.json`, `confusion_matrices.npz`, `test_predictions.csv.gz` |
 | `visualization.py` | `results/figures/*.png` |
+| `subject_diagnostics.py` | `results/metrics/subject_diagnostics.csv`, `diagnostics_correlations.csv`, `results/figures/subject_diagnostics.png` |
 
 ### Methods
 
@@ -83,6 +85,7 @@ data_processing.py       # raw EEG -> cleaned continuous trials
 feature_extraction.py    # trials -> windowed features + window-length CV
 model_training.py        # grouped-CV model selection, training, evaluation
 visualization.py         # report figures
+subject_diagnostics.py   # per-subject signal strength, typicality, per-round accuracy
 run_pipeline.bat         # runs all four steps
 report.tex               # report source -> eeg_attention_report.pdf
 results/figures/         # figures used by the report
