@@ -1,146 +1,168 @@
 """
-visualization.py - step 4: generate report visualizations
+visualization.py - step 4: figures for the report
 
-this script takes the results from my model training and draws
-easy-to-understand charts for the final report.
+  cv_model_comparison.png  CV accuracy (training data only) per model x feature method
+  window_selection.png     window-length comparison on rounds 1-3
+  per_subject.png          test accuracy per subject, raw vs smoothed
+  smoothing_curve.png      test accuracy vs smoothing horizon (sensitivity only;
+                           the reported numbers use the pre-set 5 s)
+  confusion_matrix.png     aggregated confusion matrices of the final pipelines
 """
 
+import json
 import os
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import signal
 
-# --- settings ---
-RESULTS_FOLDER = 'results/metrics'
-FIGURES_FOLDER = 'results/figures'
-PROCESSED_FOLDER = 'processed_data'
+from common import FIGURES_FOLDER, METRICS_FOLDER, SMOOTH_SECONDS, smooth_probabilities
 
-# make the charts look nice
 plt.style.use('seaborn-v0_8-whitegrid')
-sns.set_context("paper", font_scale=1.4)
+sns.set_context('paper', font_scale=1.3)
+
+SCENARIOS = {'subject_dependent': 'Subject-dependent', 'cross_subject': 'Cross-subject'}
+METHOD_ORDER = ['none', 'anova', 'fi', 'lcc', 'pca']
+MODEL_ORDER = ['LDA', 'LogReg', 'KNN', 'RF', 'LightGBM']
 
 
-# --- plotting functions ---
+def save(fig, name):
+    fig.savefig(os.path.join(FIGURES_FOLDER, name), dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'saved {name}')
 
-def draw_accuracy_chart():
-    """draws a bar chart showing which model was the most accurate."""
-    csv_path = os.path.join(RESULTS_FOLDER, 'aggregated_results.csv')
-    if not os.path.exists(csv_path):
-        print("Couldn't find the results CSV. Did you run Step 3?")
-        return
-        
-    results_df = pd.read_csv(csv_path)
-    
-    # i use a tool called 'catplot' to draw two charts side-by-side
-    # one for subject-dependent, one for cross-subject
-    chart = sns.catplot(
-        data=results_df, 
-        kind="bar",
-        x='Model', 
-        y='Mean_Accuracy', 
-        hue='Method',
-        col='Scenario',
-        palette='viridis',
-        height=7,
-        aspect=1.4
-    )
-    
-    chart.fig.suptitle('Model Accuracy Comparison', fontsize=18, y=1.02)
-    chart.set_axis_labels("Machine Learning Model", "Average Accuracy")
-    
-    # make the y-axis start at 0.4 so the differences are visible
-    for axis in chart.axes.flat:
-        axis.set_ylim(0.4, 0.7)
-        # draw a red line at 50% to show what random guessing looks like
-        axis.axhline(y=0.5, color='r', linestyle='--', alpha=0.5)
-        axis.tick_params(axis='x', labelsize=11)
-    
-    # make the legend text bigger
-    chart._legend.set_title('Feature Method')
-    plt.setp(chart._legend.get_texts(), fontsize=11)
-    plt.setp(chart._legend.get_title(), fontsize=12)
-        
-    output_path = os.path.join(FIGURES_FOLDER, 'accuracy_chart.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print("Saved accuracy chart!")
+
+def best_per_model_method(cv, extra_keys=()):
+    """best hyperparameter setting for each (model, selector) pair"""
+    keys = list(extra_keys) + ['model', 'selector']
+    return cv.sort_values('cv_acc', ascending=False).groupby(keys, as_index=False).first()
+
+
+def draw_cv_comparison():
+    dep = pd.read_csv(os.path.join(METRICS_FOLDER, 'cv_subject_dependent.csv'))
+    cross = pd.read_csv(os.path.join(METRICS_FOLDER, 'cv_cross_subject_inner.csv'))
+    # cross-subject: average inner-CV score over the 20 outer folds
+    cross = (cross.groupby(['model', 'params', 'selector']).cv_acc.mean().reset_index())
+
+    dep_best = best_per_model_method(dep[dep['pool'] == dep.iloc[0]['pool']])
+    cross_best = best_per_model_method(cross)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+    for ax, data, title in ((axes[0], dep_best, f'Subject-dependent ({dep.iloc[0]["pool"]} training pool)'),
+                            (axes[1], cross_best, 'Cross-subject (mean of inner CV)')):
+        sns.barplot(data=data, x='model', y='cv_acc', hue='selector', order=MODEL_ORDER,
+                    hue_order=METHOD_ORDER, palette='viridis', ax=ax)
+        ax.set_title(title)
+        ax.set_xlabel('')
+        ax.set_ylabel('CV accuracy (smoothed, rounds/subjects held out)')
+        ax.set_ylim(0.45, max(0.82, data.cv_acc.max() + 0.08))
+        ax.axhline(0.5, color='r', ls='--', alpha=0.5)
+        ax.legend(title='Feature method', fontsize=9, title_fontsize=10, loc='upper center',
+                  ncol=5)
+    fig.suptitle('Model selection: cross-validated accuracy on training data only', y=1.02)
+    save(fig, 'cv_model_comparison.png')
+
+
+def draw_window_selection():
+    table = pd.read_csv(os.path.join(METRICS_FOLDER, 'window_selection.csv'))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    styles = {'dep_raw': ('Subject-dep., raw', 'C0', '--'),
+              'dep_smoothed': ('Subject-dep., smoothed', 'C0', '-'),
+              'cross_raw': ('Cross-subject, raw', 'C1', '--'),
+              'cross_smoothed': ('Cross-subject, smoothed', 'C1', '-')}
+    for col, (label, color, ls) in styles.items():
+        ax.plot(table.window_s, table[col], marker='o', color=color, ls=ls, label=label)
+    ax.set_xticks(table.window_s)
+    ax.set_xlabel('Window length (s), 50% overlap')
+    ax.set_ylabel('CV accuracy (rounds 1-3)')
+    ax.set_title('Window length comparison (LightGBM reference)')
+    ax.legend()
+    save(fig, 'window_selection.png')
+
+
+def draw_per_subject():
+    table = pd.read_csv(os.path.join(METRICS_FOLDER, 'per_subject_results.csv'))
+    table['n'] = table.subject.str.replace('Subject', '').astype(int)
+    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+    for ax, (scenario, title) in zip(axes, SCENARIOS.items()):
+        part = table[table.scenario == scenario].sort_values('n')
+        x = np.arange(len(part))
+        ax.bar(x - 0.2, part.raw_accuracy, 0.4, label='Raw window', color='#9ecae1')
+        ax.bar(x + 0.2, part.smoothed_accuracy, 0.4, label=f'Smoothed ({SMOOTH_SECONDS:.0f} s)',
+               color='#3182bd')
+        ax.plot(x, part.baseline_acc, 'k_', markersize=14, mew=2, label='Majority baseline')
+        ax.set_xticks(x, part.n)
+        ax.set_ylim(0.3, 1.0)
+        ax.set_ylabel('Test accuracy')
+        ax.set_title(f'{title}: mean {part.smoothed_accuracy.mean():.1%} '
+                     f'(raw {part.raw_accuracy.mean():.1%})')
+        ax.legend(loc='lower right', fontsize=9, ncol=3)
+    axes[1].set_xlabel('Subject')
+    fig.tight_layout()
+    save(fig, 'per_subject.png')
+
+
+def draw_smoothing_curve():
+    preds = pd.read_csv(os.path.join(METRICS_FOLDER, 'test_predictions.csv.gz'))
+    summary = pd.read_csv(os.path.join(METRICS_FOLDER, 'summary.csv'))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for i, (scenario, title) in enumerate(SCENARIOS.items()):
+        part = preds[preds.scenario == scenario]
+        row = summary[summary.scenario == scenario].iloc[0]
+        step = row.window_s / 2
+        horizons = np.arange(0, 31, 1)
+        accs = []
+        for h in horizons:
+            k = max(1, int(h / step + 0.5))
+            sm = smooth_probabilities(part.proba.values, part.trial_id.values, k)
+            per_subj = pd.Series((sm >= 0.5) == part.label.values).groupby(part.subject.values).mean()
+            accs.append(per_subj.mean())
+        ax.plot(horizons, accs, color=f'C{i}', label=title)
+    ax.axvline(SMOOTH_SECONDS, color='gray', ls=':', label=f'Reported setting ({SMOOTH_SECONDS:.0f} s)')
+    ax.set_xlabel('Causal smoothing horizon (s)')
+    ax.set_ylabel('Mean test accuracy')
+    ax.set_title('Sensitivity to smoothing horizon (not used for selection)')
+    ax.legend()
+    save(fig, 'smoothing_curve.png')
 
 
 def draw_confusion_matrices():
-    """draws a heatmap showing where my models made mistakes."""
-    matrix_path = os.path.join(RESULTS_FOLDER, 'confusion_matrices.npz')
-    if not os.path.exists(matrix_path):
-        return
-        
-    data = np.load(matrix_path)
-    
-    # add up all the matrices for all subjects
-    total_dependent = None
-    total_cross = None
-    
-    for key in data.files:
-        if '_dep' in key:
-            if total_dependent is None:
-                total_dependent = data[key]
-            else:
-                total_dependent = total_dependent + data[key]
-        elif '_cross' in key:
-            if total_cross is None:
-                total_cross = data[key]
-            else:
-                total_cross = total_cross + data[key]
-            
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    
-    if total_dependent is not None:
-        # convert raw numbers to percentages
-        row_totals = total_dependent.sum(axis=1)
-        percentages = total_dependent / row_totals[:, None]
-        
-        sns.heatmap(
-            percentages, annot=True, fmt='.1%', cmap='Blues',
-            xticklabels=['Unfocused', 'Focused'], yticklabels=['Unfocused', 'Focused'],
-            ax=ax1
-        )
-        ax1.set_title('Subject-Dependent (GBoosting + All Features)', pad=15)
-        ax1.set_ylabel('What the person was actually doing')
-        ax1.set_xlabel('What the AI guessed')
-        
-    if total_cross is not None:
-        row_totals = total_cross.sum(axis=1)
-        percentages = total_cross / row_totals[:, None]
-        
-        sns.heatmap(
-            percentages, annot=True, fmt='.1%', cmap='Oranges',
-            xticklabels=['Unfocused', 'Focused'], yticklabels=['Unfocused', 'Focused'],
-            ax=ax2
-        )
-        ax2.set_title('Cross-Subject (RF + LCC)', pad=15)
-        ax2.set_ylabel('What the person was actually doing')
-        ax2.set_xlabel('What the AI guessed')
-    
-    plt.tight_layout()
-    output_path = os.path.join(FIGURES_FOLDER, 'confusion_matrix.png')
-    plt.savefig(output_path, dpi=300)
-    plt.close()
-    print("Saved confusion matrix!")
+    data = np.load(os.path.join(METRICS_FOLDER, 'confusion_matrices.npz'))
+    with open(os.path.join(METRICS_FOLDER, 'chosen_configs.json')) as f:
+        chosen = json.load(f)
+    dep = chosen['subject_dependent']
+    cross_models = pd.DataFrame(chosen['cross_subject']).model.value_counts()
+    titles = {
+        'subject_dependent': f'Subject-dependent ({dep["model"]} + {dep["selector"]})',
+        'cross_subject': 'Cross-subject (' + ', '.join(
+            f'{m} x{n}' for m, n in cross_models.items()) + ')',
+    }
 
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    for row, scenario in enumerate(SCENARIOS):
+        for col, kind in enumerate(('raw', 'smoothed')):
+            total = sum(data[k] for k in data.files if k.startswith(f'{scenario}_{kind}_'))
+            pct = total / total.sum(axis=1, keepdims=True)
+            ax = axes[row, col]
+            sns.heatmap(pct, annot=True, fmt='.1%', cmap='Blues' if row == 0 else 'Oranges',
+                        xticklabels=['Unfocused', 'Focused'],
+                        yticklabels=['Unfocused', 'Focused'], vmin=0, vmax=1, ax=ax, cbar=False)
+            ax.set_title(f'{titles[scenario]}\n{kind} windows', fontsize=11)
+            ax.set_ylabel('True state')
+            ax.set_xlabel('Predicted state')
+    fig.tight_layout()
+    save(fig, 'confusion_matrix.png')
 
-
-# --- main process ---
 
 def main():
-    print("Drawing pictures for the report...")
-    
-    if not os.path.exists(FIGURES_FOLDER):
-        os.makedirs(FIGURES_FOLDER)
-        
-    draw_accuracy_chart()
+    os.makedirs(FIGURES_FOLDER, exist_ok=True)
+    draw_window_selection()
+    draw_cv_comparison()
+    draw_per_subject()
+    draw_smoothing_curve()
     draw_confusion_matrices()
-    
-    print("All done!")
+
 
 if __name__ == '__main__':
     main()

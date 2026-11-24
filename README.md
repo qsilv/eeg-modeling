@@ -1,65 +1,94 @@
-# EEG Mental Attention State Classification
+# EEG Attention State Classification
 
-Investigating classical machine learning techniques for classifying human mental attention states (Focused vs. Unfocused) from EEG data, targeting real-time Brain-Computer Interface (BCI) applications using the NeuroPawn 125 Hz headset.
+Classical machine learning for classifying focused vs. unfocused mental states
+from EEG, restricted to what a budget 8-channel, 125 Hz headset (NeuroPawn)
+can record. The report is [`eeg_attention_report.pdf`](eeg_attention_report.pdf)
+(source: `report.tex`).
 
 ## Dataset
 
-**XJTU-EEG MEMA** (Multi-label EEG for Mental Attention states)
-- Source: https://github.com/XJTU-EEG/MEMA
-- 20 subjects, 12 trials each, 1,060 minutes total
-- Raw data from `For_graph/` directory (pre-segmented `.txt` files)
-- 7 channels selected: F3, Fz, F4, C3, Cz, C4, Pz
+**XJTU-EEG MEMA** (Multi-label EEG for Mental Attention states),
+<https://github.com/XJTU-EEG/MEMA>, paper: <https://arxiv.org/abs/2411.09879>.
 
-## How to Run
+- 20 subjects x 12 trials (4 rounds x attentive / neutral / relaxed), ~45 min per subject
+- The pipeline reads the `For_graph/` text files (32 columns at 500 Hz)
+- 8 channels kept: F3, Fz, F4, C3, C4, Pz, O1, O2
+- Labels: `a` (attentive) = focused (1); `n` (neutral) and `r` (relaxed) = unfocused (0)
 
-Scripts should be run **in order** from the project root directory:
+Put the extracted data at `MEMA Dataset/MEMA/For_graph/SubjectN/SubjectN_<state><round>.txt`.
+Neither the raw data nor the processed trials are committed: the dataset has no
+stated license, so redistribution is not clearly permitted, and the processed
+float32 trials are ~190 MB. Everything under `processed_data/` is regenerated
+by the pipeline.
+
+## Pipeline
+
+Run from the project root, in order (`run_pipeline.bat` does all four):
 
 ```bash
-# Step 1: Process raw .txt files -> cleaned .npz
-python data_processing.py
-
-# Step 2: Extract features from processed EEG data
-python feature_extraction.py
-
-# Step 3: Train and evaluate ML models
-python model_training.py
-
-# Step 4: Generate visualizations for the report
-python visualization.py
+pip install -r requirements.txt
+python data_processing.py      # raw .txt -> cleaned continuous trials
+python feature_extraction.py   # trials -> windowed features, window-length CV
+python model_training.py       # model selection (grouped CV), training, evaluation
+python visualization.py        # report figures
 ```
 
-## Required Libraries
+| Step | Output |
+|------|--------|
+| `data_processing.py` | `processed_data/trials/SubjectN.npz` (one float32 array per trial), `metadata.csv` (subject, trial_id, round, state, label) |
+| `feature_extraction.py` | `processed_data/features/features_{1,2,4}s.npz`, `results/metrics/window_selection.csv`, `window_choice.json` |
+| `model_training.py` | `results/metrics/summary.csv`, `per_subject_results.csv`, `cv_*.csv`, `chosen_configs.json`, `confusion_matrices.npz`, `test_predictions.csv.gz` |
+| `visualization.py` | `results/figures/*.png` |
 
-All are standard Anaconda packages:
-- numpy, pandas, scipy, scikit-learn, matplotlib, seaborn
+### Methods
 
-Install with: `pip install -r requirements.txt`
+- **Preprocessing**: 8 channels, `decimate` 500 -> 125 Hz, 4th-order Butterworth
+  band-pass 0.5-45 Hz (`sosfiltfilt`), applied to each trial as one continuous signal.
+- **Windowing** (at feature time): 1 s, 2 s and 4 s windows with 50 % overlap are
+  compared by cross-validation on rounds 1-3 only; 4 s won in both scenarios.
+- **Features** (11 per channel, 88 total): log band power (delta, theta, alpha,
+  beta, gamma), log alpha/beta, theta/beta, theta/alpha ratios, log standard
+  deviation, skewness, kurtosis.
+- **Normalization**: per-subject z-scoring of every feature. The dependent scenario
+  uses statistics from the training rounds; in the cross-subject scenario every
+  subject, including the held-out one, uses its own statistics (unlabeled calibration).
+- **Model selection**: feature selection (none / ANOVA top-30 / RF importance /
+  linear correlation / PCA) inside an sklearn `Pipeline` with LDA, logistic
+  regression, KNN, random forest or LightGBM (`class_weight='balanced'` where
+  supported). The configuration is chosen with grouped CV on training data only:
+  leave-one-round-out over rounds 1-3 for the subject-dependent scenario and
+  nested GroupKFold by subject for cross-subject. The test set never picks a configuration.
+- **Smoothing**: predicted probabilities are averaged causally over the past ~5 s
+  within each trial. Raw-window and smoothed scores are both reported.
+- **Evaluation**: subject-dependent (train rounds 1-3, test round 4) and
+  leave-one-subject-out; accuracy, balanced accuracy and macro F1, mean +/- std over subjects.
 
-## Project Structure
+## Results
+
+Mean +/- std across 20 subjects (4 s windows; "smoothed" = 5 s causal probability average).
+
+| Scenario | Baseline | Raw accuracy | Smoothed accuracy | Smoothed balanced acc. | Smoothed macro F1 |
+|----------|---------:|-------------:|------------------:|-----------------------:|------------------:|
+| Subject-dependent (LDA, all features) | 55.1% | 74.0 +/- 9.9% | **77.2 +/- 11.1%** | 77.6 +/- 11.4% | 0.767 |
+| Cross-subject (nested CV: RF x11, LightGBM x5, LogReg x4) | 52.4% | 68.0 +/- 9.6% | **72.3 +/- 11.3%** | 72.2 +/- 11.4% | 0.721 |
+
+The previous version reported 66.9% / 58.0%, picked as the best of 20
+configurations by test accuracy. Here, no configuration is chosen on the test set.
+
+## Project structure
 
 ```
-353 project/
-data_processing.py       # Raw EEG → cleaned, downsampled windows
-feature_extraction.py    # Windows → feature matrices
-model_training.py        # Train SVM, KNN, RF, DT, GBoosting
-visualization.py         # Generate report figures
-results/
-   figures/             # Output plots
-   metrics/             # CSV result tables
-processed_data/          # Intermediate .npz files (generated)
-MEMA Dataset/            # Raw data (not included, see above)
-Papers/                  # Reference papers
-requirements.txt
-README.md
+common.py                # shared paths, z-scoring, smoothing helpers
+data_processing.py       # raw EEG -> cleaned continuous trials
+feature_extraction.py    # trials -> windowed features + window-length CV
+model_training.py        # grouped-CV model selection, training, evaluation
+visualization.py         # report figures
+run_pipeline.bat         # runs all four steps
+report.tex               # report source -> eeg_attention_report.pdf
+results/figures/         # figures used by the report
+results/metrics/         # CSV / JSON result tables
+Papers/                  # reference papers
 ```
-
-## Methods
-
-- **Preprocessing**: Bandpass filter (0.5-45 Hz), downsample 500→125 Hz, 1s windows
-- **Features**: Band powers (delta/theta/alpha/beta/gamma), band ratios, statistical features (84 total)
-- **Feature Selection**: ANOVA, Feature Importance, Linear Correlation, PCA
-- **Models**: SVM, KNN, Random Forest, Decision Tree, Gradient Boosting
-- **Evaluation**: Accuracy, Precision, Recall, F1, Confusion Matrix, 5-fold CV
 
 ## References
 

@@ -1,0 +1,152 @@
+{
+  "smooth_seconds": 5.0,
+  "subject_dependent": {
+    "pool": "own",
+    "selector": "none",
+    "model": "LDA",
+    "params": "shrinkage=auto",
+    "cv_acc": 0.721518738908041
+  },
+  "cross_subject": [
+    {
+      "subject": "Subject1",
+      "selector": "none",
+      "model": "LightGBM",
+      "params": "500x31",
+      "inner_cv_acc": 0.7316602655880603
+    },
+    {
+      "subject": "Subject2",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7203591348871905
+    },
+    {
+      "subject": "Subject3",
+      "selector": "none",
+      "model": "LogReg",
+      "params": "C=0.01",
+      "inner_cv_acc": 0.7335562756397902
+    },
+    {
+      "subject": "Subject4",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7194112040784507
+    },
+    {
+      "subject": "Subject5",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7132863319248705
+    },
+    {
+      "subject": "Subject6",
+      "selector": "none",
+      "model": "LogReg",
+      "params": "C=0.01",
+      "inner_cv_acc": 0.719924311594603
+    },
+    {
+      "subject": "Subject7",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7218666034455508
+    },
+    {
+      "subject": "Subject8",
+      "selector": "none",
+      "model": "LightGBM",
+      "params": "200x15",
+      "inner_cv_acc": 0.7414591823030274
+    },
+    {
+      "subject": "Subject9",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7287359327376727
+    },
+    {
+      "subject": "Subject10",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7342288312275262
+    },
+    {
+      "subject": "Subject11",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7351771479653167
+    },
+    {
+      "subject": "Subject12",
+      "selector": "none",
+      "model": "LightGBM",
+      "params": "500x31",
+      "inner_cv_acc": 0.7360855655766487
+    },
+    {
+      "subject": "Subject13",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7316211383197029
+    },
+    {
+      "subject": "Subject14",
+      "selector": "none",
+      "model": "LogReg",
+      "params": "C=0.01",
+      "inner_cv_acc": 0.7209117556007508
+    },
+    {
+      "subject": "Subject15",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7277089161604169
+    },
+    {
+      "subject": "Subject16",
+      "selector": "none",
+      "model": "LightGBM",
+      "params": "200x15",
+      "inner_cv_acc": 0.7381795572313189
+    },
+    {
+      "subject": "Subject17",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7228484960107405
+    },
+    {
+      "subject": "Subject18",
+      "selector": "none",
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.7279456687895139
+    },
+    {
+      "subject": "Subject19",
+      "selector": "none",
+      "model": "LightGBM",
+      "params": "200x15",
+      "inner_cv_acc": 0.7326082260836502
+    },
+    {
+      "subject": "Subject20",
+      "selector": "none",
+      "model": "LogReg",
+      "params": "C=0.01",
+      "inner_cv_acc": 0.7210705802484837
+    }
+  ]
+}

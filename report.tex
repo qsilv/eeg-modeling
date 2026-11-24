@@ -5,6 +5,7 @@
 \usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{setspace}
+\usepackage{amsmath}
 
 \singlespacing
 \begin{document}
@@ -14,20 +15,16 @@
     \begin{center}
         {\LARGE \bfseries Evaluating ML for EEG-Based\\Attention State Classification Under Budget Hardware Constraints\par}
         \vspace{1.5cm}
-        {\Large CMPT 353 - Project Report\par}
         {\Large Monir Fathalla\par}
         \vspace{1cm}
-        {\large \today\par}
-        \vspace{1cm}
-        \includegraphics[width=0.4\textwidth]{results/figures/sfurl.png}
-
+        {\large November 24, 2026\par}
     \end{center}
     \vspace*{\fill}
 \end{titlepage}
 
 \section{Introduction and Motivation}
 
-I recently joined NeuraXtension, a neuroscience club at Simon Fraser University. The club is currently exploring projects involving brain-computer interfaces (BCIs), and one idea that came up was building an attention state classifier using electroencephalogram (EEG) data. This inspired the topic of my project: I wanted to investigate how well existing classical machine learning methods perform when constrained to the hardware specifications of the NeuroPawn, a budget consumer EEG headset with 8 channels (F3, Fz, F4, C3, C4, Pz, O1, O2) sampling at 125~Hz.
+I recently joined NeuraXtension, a student neuroscience club. The club is currently exploring projects involving brain-computer interfaces (BCIs), and one idea that came up was building an attention state classifier using electroencephalogram (EEG) data. This inspired the topic of my project: I wanted to investigate how well classical machine learning methods perform when constrained to the hardware specifications of the NeuroPawn, a budget consumer EEG headset with 8 channels (F3, Fz, F4, C3, C4, Pz, O1, O2) sampling at 125~Hz.
 
 Most published EEG classification research uses medical-grade equipment with 32--64 electrodes at high sampling rates. The question I set out to answer is whether classical ML techniques can still distinguish between focused and unfocused mental states when limited to just 8 channels and a low sampling rate.
 
@@ -35,124 +32,203 @@ Most published EEG classification research uses medical-grade equipment with 32-
 
 Finding suitable data proved to be one of the most difficult parts of the project. I initially searched Kaggle but found only heavily pre-processed, single-purpose datasets, and for ones that matched attention state the only one I found ended up being poorly structured and subpar in quality. I needed a competent dataset to build a realistic BCI pipeline from scratch.
 
-I eventually found the XJTU-EEG MEMA (Multi-label EEG for Mental Attention states) dataset: 20 subjects, 12 trials each, totalling over 1,060 minutes of raw EEG recordings. However, the dataset was hosted exclusively on Baidu Pan, a Chinese cloud platform that is effectively inaccessible from North America without a local phone number. I found someone on a subreddit willing to download the data from Baidu and transfer it to me. I paid them \$16 in Ethereum. The full dataset was approximately 90~GB.
+I eventually found the XJTU-EEG MEMA (Multi-label EEG for Mental Attention states) dataset: 20 subjects, 12 trials each, totalling about 900 minutes of EEG in the trial files used here. However, the dataset was hosted exclusively on Baidu Pan, a Chinese cloud platform that is effectively inaccessible from North America without a local phone number. I found someone on a subreddit willing to download the data from Baidu and transfer it to me. I paid them \$16 in Ethereum. The full dataset was approximately 90~GB.
+
+Each subject completed four rounds, and each round contains one trial of each state: attentive (\texttt{a}, about 5~minutes), neutral (\texttt{n}, 1~minute) and relaxed (\texttt{r}, about 5~minutes). Attentive trials are labelled \emph{focused} (1); neutral and relaxed trials are labelled \emph{unfocused} (0). About 46\% of the recorded time is therefore ``focused''.
 
 \section{Data Cleaning and Preprocessing}
 
-The raw MEMA data consists of tab-separated text files inside a \texttt{For\_graph} directory, organized by subject. Each file contains 32 columns (one per electrode) with hundreds of thousands of rows recorded at 500~Hz.
+The raw MEMA data used here consists of comma-separated text files inside the \texttt{For\_graph} directory, one file per trial. Each file has 32 columns (one per electrode) recorded at 500~Hz.
 
-My preprocessing pipeline (\texttt{data\_processing.py}) performs four steps:
+My preprocessing script (\texttt{data\_processing.py}) treats every trial as one continuous signal:
 \begin{enumerate}
-    \item \textbf{Channel selection}: I discard 24 of the 32 columns and keep only the 8 channels matching the NeuroPawn's electrode positions.
-    \item \textbf{Downsampling}: I use \texttt{scipy.signal.decimate} to reduce the sampling rate from 500~Hz to 125~Hz, applying an anti-aliasing filter automatically.
-    \item \textbf{Bandpass filtering}: A 4th-order Butterworth filter removes frequencies below 0.5~Hz (motion artifacts) and above 45~Hz (electrical noise).
-    \item \textbf{Windowing}: The continuous signal is segmented into 1-second windows with a 50\% overlap. This effectively doubles the training dataset size and allows the models to capture transient brainwave events that might otherwise be split across window boundaries.
+    \item \textbf{Channel selection}: I keep only the 8 columns matching the NeuroPawn's electrode positions.
+    \item \textbf{Downsampling}: \texttt{scipy.signal.decimate} reduces the sampling rate from 500~Hz to 125~Hz, applying an anti-aliasing filter first.
+    \item \textbf{Band-pass filtering}: a 4th-order Butterworth filter (second-order sections, zero-phase \texttt{sosfiltfilt}) keeps 0.5--45~Hz, removing slow drift and high-frequency noise.
 \end{enumerate}
+Each cleaned trial is stored as a single float32 array together with its metadata (subject, round 1--4, state \texttt{a}/\texttt{n}/\texttt{r}, trial id). Files are processed in sorted order so the output is reproducible. Windowing is deferred to the feature step so that the window length can be tuned.
 
-Labels are derived from the filenames: \texttt{\_a} files correspond to ``focused'' (attentive) states, while \texttt{\_n} and \texttt{\_r} files correspond to ``unfocused'' (neutral/relaxed) states. Rounds 1--3 are designated as training data and round 4 as test data. The processed windows are saved as compressed \texttt{.npz} files.
+\section{Windowing and Feature Extraction}
 
-\section{Feature Extraction}
+\subsection{Windows}
 
-From each 1-second window, I extract 12 features per channel using \texttt{feature\_extraction.py}, yielding 96 features total (12~$\times$~8 channels). These include:
-\begin{itemize}
-    \item \textbf{Band powers} (5 features): Average power spectral density in the Delta (0.5--4~Hz), Theta (4--8~Hz), Alpha (8--13~Hz), Beta (13--30~Hz), and Gamma (30--45~Hz) bands, computed via Welch's method. To reduce noise, Welch's method was configured with a segment length of half the sampling rate (64 samples) to enable segment averaging. Finally, these power values were logarithmically transformed (\texttt{log1p}) to compress their heavily right-skewed distributions.
-    \item \textbf{Band ratios} (3 features): Alpha/Beta, Theta/Beta, and Theta/Alpha ratios, which prior literature has linked to attention and ADHD markers.
-    \item \textbf{Statistical features} (4 features): Mean, standard deviation, skewness, and kurtosis of the raw time-domain signal within each window.
-\end{itemize}
+\texttt{feature\_extraction.py} cuts each trial into windows with 50\% overlap. Overlap increases the number of windows, but neighbouring windows share half of their samples, so it does not add new information or ``double'' the usable data; it mainly gives a finer time grid for the smoothing step described later. Windows never cross trial boundaries.
 
-I then apply five feature selection strategies to produce different feature subsets for comparison:
-\begin{enumerate}
-    \item \textbf{None}: All 96 features retained as a baseline.
-    \item \textbf{ANOVA}: Features where the F-test $p$-value $\leq 0.05$ are kept (average $\approx$33 features retained).
-    \item \textbf{Feature Importance (FI)}: A Random Forest is trained and features with above-average importance scores are kept (average $\approx$24 features).
-    \item \textbf{Linear Correlation (LCC)}: Features with above-average absolute Pearson correlation with the label are kept (average $\approx$27 features). The system measures correlation between each feature and the label, then keeps labels that are above the average correlation (sum of absolute values of all correlations over n)
-    \item \textbf{PCA}: Principal Component Analysis retaining 95\% of variance (average $\approx$39 components). Setting n\_\_components=0.95 instructs the algorithm to automatically keep the minimum number of components necessary to preserve 95\% of the original data's information.
-\end{enumerate}
-
-\section{Experimental Design}
-
-I evaluate four classifiers from \texttt{scikit-learn} and \texttt{LightGBM}: KNN ($k$=5), Random Forest (100 trees), Decision Tree, and LightGBM (100 estimators). Support Vector Machines (SVM) were initially tested but ultimately removed from the pipeline; the $O(N^3)$ computational complexity caused it to fail to converge on the large cross-subject training sets within a reasonable timeframe. All models are wrapped in a \texttt{StandardScaler} pipeline.
-
-Each model is tested under two evaluation scenarios:
-\begin{itemize}
-    \item \textbf{Subject-Dependent}: Train on a subject's rounds 1--3, test on their round 4. This simulates a calibrated, personalized device.
-    \item \textbf{Cross-Subject}: Leave-one-subject-out: train on all data from 19 subjects, test on the held-out subject. This simulates out-of-the-box performance on a new user.
-\end{itemize}
-
-This produces a total of $20 \times 4 \times 5 \times 2 = 800$ individual experiments. To make this computationally feasible, I parallelized the outer subject loop across all CPU cores using \texttt{joblib.Parallel}. By utilizing LightGBM's native multi-threading, training wall-clock time was kept to under 1 hour despite the dataset effectively doubling in size due to the overlapping windows.
-
-\section{Results}
-
-The mean baseline accuracy (always predicting the majority class) is 55.1\% for Subject-Dependent and 52.5\% for Cross-Subject, confirming the dataset is approximately balanced.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{results/figures/accuracy_chart.png}
-    \caption{Mean accuracy across 20 subjects, grouped by model, feature method, and scenario.}
-\end{figure}
-
-\subsection{Cross-Subject Results}
-
-The following table shows the top cross-subject results. Random Forest with LCC-selected features achieved the highest mean accuracy at 58.0\%, followed closely by Gradient Boosting with PCA features (57.9\%) and Gradient Boosting with LCC features (57.9\%). SVM was dropped in later iterations due to scoring below the baseline in previous tests.
+I compared 1~s, 2~s and 4~s windows by cross-validation on rounds 1--3 only (round 4 was never used), with a fixed reference pipeline (per-subject z-scoring, LightGBM, 5~s smoothing). Table~\ref{tab:windows} shows that longer windows were better in both scenarios, so 4~s windows (2~s step) are used from here on.
 
 \begin{table}[H]
 \centering
-\caption{Top 5 Cross-Subject configurations by mean accuracy.}
-\label{tab:cross}
-\begin{tabular}{llccc}
+\caption{Window length comparison: cross-validated accuracy on rounds 1--3 (LightGBM reference pipeline). Subject-dependent CV holds out one training round per subject; cross-subject CV is a 5-fold GroupKFold by subject.}
+\label{tab:windows}
+\begin{tabular}{lcccccc}
 \toprule
-Model & Features & Accuracy & F1 Score & Avg Train Time (s) \\
+Window & Step & Windows & \multicolumn{2}{c}{Subject-dependent} & \multicolumn{2}{c}{Cross-subject} \\
+ & & & Raw & Smoothed & Raw & Smoothed \\
 \midrule
-RF & LCC & 58.0\% & 0.556 & 47.5 \\
-GBoosting & PCA & 57.9\% & 0.554 & 39.4 \\
-GBoosting & LCC & 57.9\% & 0.552 & 103.7 \\
-RF & None (96) & 57.8\% & 0.549 & 321.9 \\
-RF & ANOVA & 57.8\% & 0.552 & 639.3 \\
+1 s & 0.5 s & 108{,}097 & 61.8\% & 66.8\% & 60.8\% & 70.0\% \\
+2 s & 1 s & 53{,}578 & 63.8\% & 67.9\% & 63.1\% & 70.6\% \\
+4 s & 2 s & 26{,}639 & \textbf{68.5\%} & \textbf{70.6\%} & \textbf{67.6\%} & \textbf{71.6\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Subject-Dependent Results}
+\subsection{Features}
 
-Performance improved substantially in the personalized scenario. The top-performing pair (Gradient Boosting with all 96 features) reached 66.9\%, and Random Forest with all features was close behind at 66.7\%. These higher numbers reflect the benefit of overlapping data windows, logarithmic PSD scaling, and occipital channel coverage for subject-calibrated training.
+From each window I extract 11 features per channel, 88 in total:
+\begin{itemize}
+    \item \textbf{Log band powers} (5): power in Delta (0.5--4~Hz), Theta (4--8~Hz), Alpha (8--13~Hz), Beta (13--30~Hz) and Gamma (30--45~Hz), integrated from a Welch power spectrum (1~s segments for 2--4~s windows) and log-transformed to compress their right-skewed distributions.
+    \item \textbf{Log band ratios} (3): Alpha/Beta, Theta/Beta and Theta/Alpha, which prior literature has linked to attention and ADHD markers. Taking logs makes them differences of log powers; tree models are unaffected, while linear models see better-behaved inputs.
+    \item \textbf{Statistical features} (3): log standard deviation, skewness and kurtosis of the time-domain signal.
+\end{itemize}
+The window mean used in the previous version was dropped: after the 0.5~Hz high-pass it is essentially zero. The feature file stores only these base features plus each window's subject, trial id, round and label; feature selection now happens inside the model pipeline (Section~\ref{sec:selection}).
 
-\subsection{Key Observations}
+\section{Experimental Design}
 
+\subsection{Evaluation scenarios}
+
+\begin{itemize}
+    \item \textbf{Subject-dependent}: train on rounds 1--3, test on round 4 of the same subject. This simulates a device calibrated with a few labelled sessions from its user.
+    \item \textbf{Cross-subject}: leave-one-subject-out. Train on 19 subjects and test on all 12 trials of the held-out subject. This simulates a new user with no labelled calibration data.
+\end{itemize}
+
+\subsection{Per-subject normalization}
+
+EEG amplitude and spectral baselines differ strongly between people. Every feature is therefore z-scored per subject using that subject's own mean and standard deviation. In the subject-dependent scenario the statistics come from the training rounds (z-scoring round 4 with its own statistics gave no gain in an earlier experiment). In the cross-subject scenario every subject, including the held-out one, is normalized with its own statistics. For the held-out subject this uses its recordings but never its labels, so it acts as an unlabeled calibration step.
+
+\subsection{Feature selection, models and model selection}
+\label{sec:selection}
+
+Feature selection is the first step of an sklearn \texttt{Pipeline}, so it is fit on training folds only:
 \begin{enumerate}
-    \item \textbf{Tree ensembles dominate.} LightGBM and Random Forest consistently outperformed all other models in both scenarios. These models can internally discover non-linear interactions between features, which is critical for noisy EEG data.
-    \item \textbf{Raw vs.\ Selected features.} Keeping all 96 features (\texttt{none}) produced the highest accuracy (66.9\%) for the subject-dependent scenario. However, for the cross-subject scenario, LCC and PCA offered slight improvements over the raw features, suggesting feature selection helps filter out subject-specific noise when generalizing.
-    \item \textbf{SVM scalability issues.} Due to its $O(N^3)$ complexity and sensitivity to un-transformed outliers, SVM was dropped as it failed to scale to the large, noisy cross-subject dataset within reasonable iteration limits.
-    \item \textbf{Subject-dependent vs.\ cross-subject gap.} There is roughly a 7--8 percentage point drop from subject-dependent to cross-subject accuracy across all configurations, reflecting the high inter-subject variability of EEG signals.
-    \item \textbf{Skepticism of literature benchmarks.} Prior studies reported remarkably high accuracies on similar classification tasks, such as 91.7\% (Aci et al., 2019) and an unprecedented 99.6\% (Wang \& Kim, 2025). Given the extreme noise inherent to raw EEG data observed in this project, these near-perfect results warrant scrutiny. Even considering their use of 32-channel, 500~Hz setups, achieving $\sim$100\% accuracy on highly variable brainwave data suggests potential data leakage or exceptionally favorable train/test splits in those studies.
+    \item \textbf{None}: all 88 features.
+    \item \textbf{ANOVA}: the 30 features with the highest F-statistic. (The old $p \le 0.05$ rule keeps almost every feature when tens of thousands of windows are pooled, so a fixed count is used.)
+    \item \textbf{Feature importance (FI)}: features with above-average random forest importance.
+    \item \textbf{Linear correlation (LCC)}: features whose absolute Pearson correlation with the label is above the mean absolute correlation.
+    \item \textbf{PCA}: standardized features projected onto the components that explain 95\% of the variance.
 \end{enumerate}
+The classifiers are shrinkage LDA, logistic regression ($C \in \{0.01, 1\}$), KNN ($k \in \{15, 51\}$), random forest (200 trees) and LightGBM (two settings: 200 trees with 15 leaves, and 500 trees with 31 leaves). \texttt{class\_weight='balanced'} (or equal priors for LDA) is used wherever supported. This gives $5 \times 8 = 40$ candidate configurations. The single decision tree from the previous version was replaced by LDA and logistic regression, which are standard linear baselines for EEG. SVMs were not included: kernel SVMs scale poorly to the tens of thousands of windows in the cross-subject training sets.
+
+The configuration is chosen by grouped cross-validation on training data only; the test data never selects a model:
+\begin{itemize}
+    \item \textbf{Subject-dependent}: leave-one-round-out over rounds 1--3 (3 folds). Besides the 40 configurations, I also compare two training pools: \emph{own} (one model per subject, trained only on that subject's data) and \emph{pooled} (one model trained on the training rounds of all 20 subjects, each z-scored with its own statistics). Both pools only ever see rounds 1--3. The candidate with the best mean CV accuracy across subjects is then refit on rounds 1--3 and tested on round 4.
+    \item \textbf{Cross-subject}: nested cross-validation. For each of the 20 held-out subjects, a 4-fold GroupKFold over the remaining 19 subjects ranks the 40 configurations; the winner is refit on all 19 subjects and tested on the held-out subject. The selected configuration may differ between outer folds.
+\end{itemize}
+The selection score is smoothed accuracy (next section), which is the output the system would actually show.
+
+\subsection{Causal smoothing}
+
+A person's attention state persists for many seconds, while single 4~s windows are noisy. The predicted probability of ``focused'' is therefore averaged over the current and previous windows covering the past 5~s (3 windows with a 2~s step), within a trial only. The average only uses past windows, so it could run online; the first windows of a trial average over whatever history exists. The 5~s horizon was fixed in advance and was not tuned on test data. I report both raw-window and smoothed metrics.
+
+\subsection{Metrics}
+
+For each test subject I compute accuracy, balanced accuracy and macro F1, and report the mean $\pm$ standard deviation across the 20 subjects. The baseline always predicts the majority class of the training data.
+
+\section{Results}
+
+\subsection{Selected configurations}
+
+Figure~\ref{fig:cv} shows the cross-validated accuracy of every model and feature-selection method; these are the scores the configurations were chosen by. The differences between the best candidates are small (about one percentage point), while KNN is clearly weaker.
+
+\begin{itemize}
+    \item \textbf{Subject-dependent}: shrinkage LDA on all 88 features, trained per subject (\emph{own} pool), CV accuracy 72.2\%. The best pooled candidate (LightGBM on PCA components, trained on all subjects' rounds 1--3) was close behind at 71.8\%.
+    \item \textbf{Cross-subject}: every outer fold chose to keep all 88 features; the classifier was a random forest in 11 of the 20 folds, LightGBM in 5 and logistic regression ($C=0.01$) in 4.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{results/figures/cv_model_comparison.png}
+    \caption{Cross-validated (smoothed) accuracy of each model and feature method on training data only, using the best hyperparameter setting of each pair. Left: leave-one-round-out over rounds 1--3. Right: inner GroupKFold scores averaged over the 20 outer folds.}
+    \label{fig:cv}
+\end{figure}
+
+\subsection{Test results}
+
+Table~\ref{tab:results} reports the test performance of the selected pipelines. The majority-class baseline is 55.1\% (subject-dependent) and 52.4\% (cross-subject), so the classes are roughly balanced, and accuracy, balanced accuracy and macro F1 agree closely.
+
+\begin{table}[H]
+\centering
+\caption{Test results, mean $\pm$ standard deviation across the 20 subjects. ``Raw'' scores single 4~s windows; ``smoothed'' averages the predicted probability over the past 5~s within the trial.}
+\label{tab:results}
+\begin{tabular}{llccc}
+\toprule
+Scenario & Output & Accuracy & Balanced acc. & Macro F1 \\
+\midrule
+Subject-dependent & Baseline & 55.1\% & 50.0\% & -- \\
+ & Raw window & 74.0 $\pm$ 9.9\% & 74.3 $\pm$ 10.2\% & 0.737 $\pm$ 0.103 \\
+ & Smoothed & \textbf{77.2 $\pm$ 11.1\%} & \textbf{77.6 $\pm$ 11.4\%} & \textbf{0.767 $\pm$ 0.116} \\
+\midrule
+Cross-subject & Baseline & 52.4\% & 50.0\% & -- \\
+ & Raw window & 68.0 $\pm$ 9.6\% & 67.9 $\pm$ 9.7\% & 0.679 $\pm$ 0.097 \\
+ & Smoothed & \textbf{72.3 $\pm$ 11.3\%} & \textbf{72.2 $\pm$ 11.4\%} & \textbf{0.721 $\pm$ 0.114} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The previous version of this project reached 66.9\% (subject-dependent) and 58.0\% (cross-subject) with its best configurations. The new pipeline gains about 10 and 14 percentage points after smoothing, and 7 and 10 points on raw windows. The comparison understates the improvement: the old numbers came from picking the best of 20 model/feature combinations by test accuracy, which inflates them, whereas the new configurations were chosen without looking at the test data.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{results/figures/per_subject.png}
+    \caption{Test accuracy per subject. Black marks show the majority-class baseline.}
+    \label{fig:subjects}
+\end{figure}
+
+Performance varies a lot between people (Figure~\ref{fig:subjects}): smoothed accuracy ranges from 52\% to 92\% in the subject-dependent scenario and from 54\% to 92\% across subjects. All 20 held-out subjects are above the cross-subject baseline, although subject~11 only barely; in the subject-dependent scenario subject~16 stays at chance.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{results/figures/confusion_matrix.png}
-    \caption{Aggregated confusion matrices across all 20 subjects for the top-performing configuration in each scenario: GBoosting with all 96 features (subject-dependent, 66.9\%) and Random Forest with LCC-selected features (cross-subject, 58.0\%).}
+    \caption{Confusion matrices aggregated over all 20 subjects for the selected pipelines (rows normalized), raw and smoothed.}
+    \label{fig:confusion}
+\end{figure}
+
+The errors are fairly symmetric (Figure~\ref{fig:confusion}): smoothing reduces both false ``focused'' and false ``unfocused'' predictions rather than shifting the decision towards one class.
+
+\subsection{Key Observations}
+
+\begin{enumerate}
+    \item \textbf{Per-subject normalization matters most across people.} In an earlier experiment with the old 1~s features, per-subject z-scoring alone moved cross-subject accuracy from 57.4\% to 61.8\%. It removes each person's overall amplitude and spectral offsets, which are larger than the differences between attention states.
+    \item \textbf{Temporal context is the largest single lever.} Longer windows (Table~\ref{tab:windows}) and probability smoothing both add context, and both help. Figure~\ref{fig:smoothing} shows that accuracy keeps rising with longer smoothing horizons. The 5~s setting was fixed in advance and is the one reported; the curve is only a sensitivity analysis, and choosing the horizon from it would be tuning on the test set.
+    \item \textbf{Model choice matters less once the inputs are normalized.} Linear models (LDA, logistic regression) and tree ensembles (random forest, LightGBM) are within about one point of each other in CV. A shrinkage LDA, the simplest model, was the best per-subject choice: with only about 1{,}000 training windows per subject, a strongly regularized linear model is hard to beat.
+    \item \textbf{Feature selection did not help.} Keeping all 88 features was chosen in both scenarios. With per-subject z-scoring and regularized models, removing features mostly removes information.
+    \item \textbf{Things that did not help.} Earlier experiments found no gain from relative band power, Hjorth parameters, alpha asymmetry, or z-scoring round~4 with its own statistics. A cross-validation check on rounds 1--3 with log-Euclidean covariance features (36 extra features) gave $+1.0$ point cross-subject and $-0.2$ subject-dependent. This is within fold-to-fold noise, so the features were not adopted.
+    \item \textbf{Skepticism of literature benchmarks.} Prior studies reported very high accuracies on similar tasks, such as 91.7\% (Aci et al., 2019) and 99.6\% (Wang \& Kim). Even with 32-channel, 500~Hz data that is surprising. A common cause of such numbers is splitting overlapping windows from the same recording into training and test sets, which this project avoids by always holding out whole rounds or subjects.
+\end{enumerate}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{results/figures/smoothing_curve.png}
+    \caption{Mean test accuracy versus causal smoothing horizon (sensitivity analysis only; all reported numbers use the pre-set 5~s).}
+    \label{fig:smoothing}
 \end{figure}
 
 \section{Limitations and Future Work}
 
-Several limitations should be noted. First, the best cross-subject accuracy of 58.0\% is only modestly above the 52.5\% baseline. While the improvement is consistent across subjects, it is not yet sufficient for an out-of-the-box BCI product without prior calibration.
+Several limitations should be noted.
 
-Most importantly, this project used research-grade data that was artificially restricted to 8 channels. A real NeuroPawn headset would introduce additional noise from dry electrodes, lower signal quality, and motion artifacts. Validating these findings on actual consumer-grade hardware is a necessary next step.
+\begin{itemize}
+    \item \textbf{Block design favours smoothing.} Each trial is one to five minutes of a single state, so averaging over the past few seconds almost always averages over the same label. When attention switches quickly in real use, smoothing will help less, and every switch will be detected with a delay of up to the smoothing horizon plus the 4~s window.
+    \item \textbf{Calibration data for normalization.} The cross-subject result assumes that a new user's feature statistics are known. Here they come from all of the held-out subject's recordings, which mix focused and unfocused time in roughly the same proportion as the other subjects. A deployed system would have to estimate them from a short unlabeled recording, and a very different mix of states in that recording would shift the statistics.
+    \item \textbf{Shared design decisions.} The window length and the decision not to add covariance features were made by cross-validation on rounds 1--3 of all subjects. Round~4 was never used, so the subject-dependent results are clean, but in the cross-subject evaluation the held-out subjects' rounds 1--3 contributed to these two choices. Model, feature-selection method and hyperparameters were chosen fully inside the nested loop.
+    \item \textbf{Offline filtering.} The band-pass filter is zero-phase (\texttt{sosfiltfilt}) over whole trials, which uses future samples. A real-time system would need a causal filter, which may change the results slightly.
+    \item \textbf{Research-grade data.} The data was recorded with research-grade equipment and artificially restricted to 8 channels. A real NeuroPawn headset would add noise from dry electrodes and motion. Validating on actual consumer hardware is a necessary next step.
+\end{itemize}
 
-If I had more time, I would explore within this setup by trying Grid Search to improve model hyperparameters and reconsider which channels of the 32 I want to keep using feature selection. I would also try deep learning architectures such as EEGNet, which can learn spatial and temporal features directly from raw waveforms rather than relying on handcrafted PSD features.
+Future work: test whether these 8 electrodes are the best choice using channel selection over all 32 channels, try ensembles of the linear and tree models, and try deep learning architectures such as EEGNet, which learn spatial and temporal filters directly from the raw signal.
 
 \section{Conclusion}
 
-This project built an end-to-end pipeline from raw 90~GB EEG text files to trained classifiers, simulating the constraints of a budget 8-channel headset. The results show that tree-based ensemble methods, particularly LightGBM, can distinguish focused from unfocused mental states above baseline. These findings provide NeuraXtension with a concrete starting point: LightGBM on the full PSD-derived feature set is the strongest classical baseline, but meaningful cross-subject accuracy will likely require advanced architectures like deep learning or spatial filtering.
+This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating the constraints of a budget 8-channel, 125~Hz headset. With per-subject feature normalization, 4~s windows, model selection by grouped cross-validation, and 5~s causal smoothing of the predicted probabilities, classical methods reach 77.2\% accuracy for a calibrated user and 72.3\% for an unseen user, against baselines of 55.1\% and 52.4\%. The most useful changes were statistical rather than model-related: normalizing each person's features and using more temporal context did more than switching between classifiers. These findings give NeuraXtension a concrete starting point: a regularized linear model or a tree ensemble on normalized band-power features, plus a short calibration recording for each new user.
 
 \newpage
 \section*{Project Experience Summary}
 
 \textbf{EEG Attention State Classifier: Brain-Computer Interface}
 \begin{itemize}
-    \item Built a machine learning pipeline using Python, scikit-learn, and LightGBM to process 90~GB of raw EEG data, successfully classifying mental attention states with up to 66.9\% accuracy.
-    \item Extracted 96 frequency and statistical features per epoch by applying overlapping time windows and logarithmic transformations using NumPy and SciPy, effectively doubling the usable training data to 2,000+ minutes.
-    \item Evaluated 800 individual model configurations by systematically testing 4 classifiers and 5 feature selection methods to identify LightGBM as the strongest baseline algorithm for an 8-channel budget headset.
-    \item Accelerated model training time by implementing joblib parallelization and LightGBM's native multi-threading across a 16-thread CPU, completing the entire cross-subject evaluation in just 1 hour.
+    \item Built an end-to-end Python pipeline (NumPy, SciPy, scikit-learn, LightGBM) that turns 90~GB of raw 32-channel EEG into an 8-channel, 125~Hz attention classifier matching a budget consumer headset.
+    \item Reached 77.2\% accuracy for calibrated users and 72.3\% for unseen users (baselines 55.1\% and 52.4\%), up from 66.9\% and 58.0\%, using per-subject feature normalization, tuned window length and causal probability smoothing.
+    \item Selected models without test-set leakage using grouped and nested cross-validation (leave-one-round-out and leave-one-subject-out), comparing 40 pipeline configurations (5 feature-selection methods $\times$ 8 classifier settings) for each of 20 held-out subjects.
+    \item Parallelized the nested evaluation with joblib across 16 CPU threads, completing the full cross-subject model search in about 25 minutes.
 \end{itemize}
 
 \end{document}
