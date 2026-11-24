@@ -39,6 +39,7 @@ python subject_diagnostics.py  # optional: why accuracy differs between subjects
 # optional: all 32 channels -> best 8 electrodes, EOG-only check, 3-class paper comparison
 python data_processing.py --all-channels
 python channel_selection.py
+python channel_selection.py --remove-eog   # same search with eye-movement signal regressed out
 python paper_comparison.py
 ```
 
@@ -48,7 +49,7 @@ python paper_comparison.py
 | `feature_extraction.py` | `processed_data/features/features_{1,2,4}s.npz`, `results/metrics/window_selection.csv`, `window_choice.json` |
 | `model_training.py` | `results/metrics/summary.csv`, `per_subject_results.csv`, `cv_*.csv`, `chosen_configs.json`, `confusion_matrices.npz`, `test_predictions.csv.gz` |
 | `visualization.py` | `results/figures/*.png` |
-| `channel_selection.py` | `results/metrics/channel_selection_{greedy,random,test}.csv`, `results/figures/channel_selection.png` |
+| `channel_selection.py` | `results/metrics/channel_selection_{greedy,random,test}[_eog_removed].csv`, `results/figures/channel_selection[_eog_removed].png` |
 | `paper_comparison.py` | `results/metrics/paper_comparison.csv` |
 | `subject_diagnostics.py` | `results/metrics/subject_diagnostics.csv`, `diagnostics_correlations.csv`, `results/figures/subject_diagnostics.png` |
 
@@ -94,8 +95,14 @@ the 29 EEG electrodes on rounds 1-3, tested on the untouched round 4 (smoothed a
 | All 29 EEG | 78.7% | **79.3%** |
 | EOG only (HEOL, HEOR) | 66.0% | 63.3% |
 
-The eye-movement channels alone are well above chance, so part of the signal is
-likely eye behaviour during the tasks rather than brain activity.
+The eye-movement channels alone are well above chance. With the eye signal regressed
+out of every electrode (`--remove-eog`), the NeuroPawn results do not change (70.7% /
+72.0%), but the best layout's advantage halves to about 5 points and is no longer
+significant: much of it came from eye activity. Several of the greedy picks (FP2, F7,
+T3, T6, TP8) are classic eye/muscle/auditory sites. The attentive task is a lecture
+video and the relaxed task a scenery video with music, so they differ in more than
+attention. The report recommends keeping the NeuroPawn layout, or moving C3/C4 to
+P3/P4.
 
 **3-class comparison with the dataset paper** (`paper_comparison.py`, accuracy / macro F1,
 smoothed): all 29 EEG electrodes reach 70.4% / 63.3% subject-dependent and 69.1% / 59.3%

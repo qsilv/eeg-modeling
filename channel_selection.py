@@ -23,10 +23,16 @@ z-scoring, 5 s smoothing):
      columns an earlier version of this project used by mistake, and the two
      EOG channels alone (how much can eye movements alone tell apart the states?).
 
-Outputs: results/metrics/channel_selection_{greedy,random,test}.csv,
-results/figures/channel_selection.png
+--remove-eog regresses the two EOG channels out of every EEG channel first
+(per trial, least squares), so the search can only use activity that is not
+linearly explained by horizontal eye movements. Outputs then get the suffix
+_eog_removed. (There is no vertical EOG channel, so blinks are only partly removed.)
+
+Outputs: results/metrics/channel_selection_{greedy,random,test}{suffix}.csv,
+results/figures/channel_selection{suffix}.png
 """
 
+import argparse
 import os
 import time
 import warnings
@@ -158,9 +164,32 @@ def test_round4(X, meta, cols, k_smooth):
     return np.array(dep), np.array(cross)
 
 
+def remove_eog(signals, channels):
+    """regress HEOL/HEOR (plus an intercept) out of every other channel, per trial"""
+    eog_idx = [channels.index(c) for c in EOG]
+    eeg_idx = [i for i in range(len(channels)) if i not in eog_idx]
+    cleaned = {}
+    for trial_id, x in signals.items():
+        x = x.astype(np.float64)
+        design = np.column_stack([x[:, eog_idx], np.ones(len(x))])
+        coef, *_ = np.linalg.lstsq(design, x[:, eeg_idx], rcond=None)
+        out = x.copy()
+        out[:, eeg_idx] = x[:, eeg_idx] - design @ coef
+        cleaned[trial_id] = out.astype(np.float32)
+    return cleaned
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--remove-eog', action='store_true',
+                        help='regress the EOG channels out of every EEG channel first')
+    args = parser.parse_args()
+    suffix = '_eog_removed' if args.remove_eog else ''
+
     start = time.time()
     metadata, signals, fs, all_channels = load_trials(TRIAL_FOLDER_ALL)
+    if args.remove_eog:
+        signals = remove_eog(signals, all_channels)
     X, meta, step_s = build_feature_table(metadata, signals, fs, WINDOW_S, 0.5)
     del signals
     k = smoothing_windows(step_s)
@@ -171,12 +200,13 @@ def main():
     data = SearchData(X, meta, k)
     print('Greedy forward selection over EEG electrodes (rounds 1-3 CV):')
     greedy = greedy_search(data, eeg, all_channels)
-    greedy.to_csv(os.path.join(METRICS_FOLDER, 'channel_selection_greedy.csv'), index=False)
+    greedy.to_csv(os.path.join(METRICS_FOLDER, f'channel_selection_greedy{suffix}.csv'), index=False)
 
     rng = np.random.default_rng(RANDOM_STATE)
     random_sets = [list(rng.choice(eeg, 8, replace=False)) for _ in range(N_RANDOM)]
     named_sets = {'NeuroPawn 8': NEUROPAWN,
                   'Greedy best 8': greedy.channels[7].split(','),
+                  'Best 8 before EOG removal': ['T6', 'FP2', 'T3', 'TP8', 'Cz', 'P3', 'Pz', 'F7'],
                   f'All {len(eeg)} EEG': eeg,
                   'Previous (mislabelled) 8': PREVIOUS_MISLABELLED,
                   'EOG only (HEOL, HEOR)': EOG}
@@ -185,7 +215,7 @@ def main():
                                  for s in to_score)
     random_df = pd.DataFrame([{'channels': ','.join(s), **sc}
                               for s, sc in zip(random_sets, scores[:N_RANDOM])])
-    random_df.to_csv(os.path.join(METRICS_FOLDER, 'channel_selection_random.csv'), index=False)
+    random_df.to_csv(os.path.join(METRICS_FOLDER, f'channel_selection_random{suffix}.csv'), index=False)
     named_cv = dict(zip(named_sets, scores[N_RANDOM:]))
 
     test_rows, per_subject = [], {}
@@ -210,7 +240,7 @@ def main():
         row.update({f'cross_{i + 1}': v for i, v in enumerate(cross)})
         test_rows.append(row)
     test = pd.DataFrame(test_rows)
-    test.to_csv(os.path.join(METRICS_FOLDER, 'channel_selection_test.csv'), index=False)
+    test.to_csv(os.path.join(METRICS_FOLDER, f'channel_selection_test{suffix}.csv'), index=False)
 
     pd.set_option('display.width', 220)
     print('\nRandom 8-electrode sets, CV score: '
@@ -220,11 +250,11 @@ def main():
             'test_dep_mean', 'test_cross_mean', 'dep_vs_neuropawn', 'dep_n_better',
             'dep_wilcoxon_p', 'cross_vs_neuropawn', 'cross_n_better', 'cross_wilcoxon_p']
     print(test[cols].round(3).to_string(index=False))
-    draw(greedy, random_df, named_cv, f'All {len(eeg)} EEG')
+    draw(greedy, random_df, named_cv, f'All {len(eeg)} EEG', suffix)
     print(f'Total {time.time() - start:.0f} s')
 
 
-def draw(greedy, random_df, named_cv, all_name):
+def draw(greedy, random_df, named_cv, all_name, suffix=''):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     ax = axes[0]
     ax.plot(greedy.n_channels, greedy.dep_cv, 'o-', label='Subject-dependent CV')
@@ -250,7 +280,7 @@ def draw(greedy, random_df, named_cv, all_name):
     ax.set_title(f'{len(random_df)} random 8-electrode layouts')
     ax.legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(FIGURES_FOLDER, 'channel_selection.png'), dpi=300,
+    fig.savefig(os.path.join(FIGURES_FOLDER, f'channel_selection{suffix}.png'), dpi=300,
                 bbox_inches='tight')
     plt.close(fig)
 

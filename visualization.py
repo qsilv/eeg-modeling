@@ -155,8 +155,50 @@ def draw_confusion_matrices():
     save(fig, 'confusion_matrix.png')
 
 
+# Earlier project phases, recorded from previous runs of this repository:
+#   phase 1 - original pipeline (1 s windows, no normalization, best of 20 configs
+#             picked by test accuracy), on the mislabelled columns
+#   phase 2 - this pipeline (smoothed accuracy) before the channel mapping was fixed
+# The final phase is read from results/metrics/summary.csv.
+EARLIER_PHASES = [
+    ('1. Original\npipeline', 0.669, 0.580),
+    ('2. Improved method\n(wrong electrodes)', 0.772, 0.737),
+]
+
+
+def draw_phase_summary():
+    summary = pd.read_csv(os.path.join(METRICS_FOLDER, 'summary.csv')).set_index('scenario')
+    phases = EARLIER_PHASES + [(
+        '3. Final: correct\nNeuroPawn electrodes',
+        summary.loc['subject_dependent', 'smoothed_accuracy_mean'],
+        summary.loc['cross_subject', 'smoothed_accuracy_mean'])]
+    baselines = (summary.loc['subject_dependent', 'baseline_acc_mean'],
+                 summary.loc['cross_subject', 'baseline_acc_mean'])
+
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    x = np.arange(len(phases))
+    for i, (label, color, base) in enumerate((('Calibrated user (subject-dependent)', '#3182bd',
+                                               baselines[0]),
+                                              ('New user (cross-subject)', '#e6550d',
+                                               baselines[1]))):
+        values = [p[1 + i] for p in phases]
+        bars = ax.bar(x + (i - 0.5) * 0.38, values, 0.38, color=color, label=label)
+        for b, v in zip(bars, values):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.008, f'{v:.1%}', ha='center',
+                    fontsize=10)
+        ax.axhline(base, color=color, ls='--', alpha=0.6, lw=1)
+    ax.text(-0.5, 0.46, 'dashed lines: majority-class baselines', fontsize=9, color='gray')
+    ax.set_xticks(x, [p[0] for p in phases])
+    ax.set_ylim(0.45, 0.85)
+    ax.set_ylabel('Test accuracy (mean over 20 subjects)')
+    ax.set_title('Accuracy through the phases of the project')
+    ax.legend(loc='upper left', fontsize=9)
+    save(fig, 'phase_summary.png')
+
+
 def main():
     os.makedirs(FIGURES_FOLDER, exist_ok=True)
+    draw_phase_summary()
     draw_window_selection()
     draw_cv_comparison()
     draw_per_subject()
