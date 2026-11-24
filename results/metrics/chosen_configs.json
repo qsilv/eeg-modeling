@@ -5,148 +5,148 @@
     "selector": "none",
     "model": "LDA",
     "params": "shrinkage=auto",
-    "cv_acc": 0.721518738908041
+    "cv_acc": 0.6976588554486304
   },
   "cross_subject": [
     {
       "subject": "Subject1",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.737468972788677
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6841642445165717
     },
     {
       "subject": "Subject2",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7289730416089703
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6863758851579643
     },
     {
       "subject": "Subject3",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7366386019061095
+      "inner_cv_acc": 0.6963731990917723
     },
     {
       "subject": "Subject4",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7260095518033752
+      "inner_cv_acc": 0.6843216738823524
     },
     {
       "subject": "Subject5",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7195685146968314
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6879567396096322
     },
     {
       "subject": "Subject6",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7266814839672604
+      "params": "LDA+LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6783955255029636
     },
     {
       "subject": "Subject7",
       "selector": "none",
-      "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7275565038722934
+      "model": "RF",
+      "params": "leaf=10",
+      "inner_cv_acc": 0.674292713766398
     },
     {
       "subject": "Subject8",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7462411104211887
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7056593942196379
     },
     {
       "subject": "Subject9",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7349797304125273
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.7012727465098061
     },
     {
       "subject": "Subject10",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7347423840464293
+      "inner_cv_acc": 0.6820697184986007
     },
     {
       "subject": "Subject11",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7409854692368829
+      "inner_cv_acc": 0.6763798180718581
     },
     {
       "subject": "Subject12",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7441074571348604
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.686535926966549
     },
     {
       "subject": "Subject13",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7365601395614444
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6853098006860513
     },
     {
       "subject": "Subject14",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7271950961598634
+      "inner_cv_acc": 0.68341287034197
     },
     {
       "subject": "Subject15",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7337936813795882
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6898535215194632
     },
     {
       "subject": "Subject16",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7438304788239543
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6998905564586295
     },
     {
       "subject": "Subject17",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7292101801671179
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6837680438158907
     },
     {
       "subject": "Subject18",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7355718940103455
+      "inner_cv_acc": 0.6881939078546299
     },
     {
       "subject": "Subject19",
       "selector": "none",
       "model": "Ensemble",
       "params": "LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7397213141014793
+      "inner_cv_acc": 0.7003251125695666
     },
     {
       "subject": "Subject20",
       "selector": "none",
       "model": "Ensemble",
-      "params": "LDA+LogReg+RF+LightGBM",
-      "inner_cv_acc": 0.7291313912671025
+      "params": "LogReg+RF+LightGBM",
+      "inner_cv_acc": 0.6855074854204911
     }
   ]
 }

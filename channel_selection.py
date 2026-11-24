@@ -3,34 +3,30 @@ channel_selection.py - which 8 electrodes work best? (optional experiment)
 
 Needs the all-channel trials:  python data_processing.py --all-channels
 
-The MEMA files carry no channel labels. The 8 NeuroPawn positions are known
-(F3, Fz, F4, C3, C4, Pz, O1, O2); the other columns are named by index (cNN) and
-described by the known electrodes their signals correlate with most.
+Candidates are the 29 EEG electrodes (the CPz reference is constant and the two
+horizontal EOG channels HEOL/HEOR are not EEG, so they are not candidates).
 
 Protocol (4 s windows, 2 s step, same 11 features per channel, per-subject
 z-scoring, 5 s smoothing):
   1. Search, rounds 1-3 only. Greedy forward selection: start empty, repeatedly
-     add the channel that most improves the CV score, up to 16 channels.
+     add the electrode that most improves the CV score, up to 16 electrodes.
      Score = mean of subject-dependent CV (per-subject shrinkage LDA,
      leave-one-round-out over rounds 1-3) and cross-subject CV (LDA, 5-fold
      GroupKFold by subject). LDA is used because it is fast and was the
      subject-dependent model chosen in model_training.py.
-     For context, 300 random 8-channel sets are scored the same way.
+     For context, 300 random 8-electrode sets are scored the same way.
   2. Clean test on round 4, which the search never saw:
        subject-dependent: per-subject LDA trained on rounds 1-3, tested on round 4
        cross-subject:     random forest trained on the other 19 subjects (all
                           rounds), tested on the held-out subject's round 4
-     for the NeuroPawn 8, the greedy best 8, and all 31 channels.
+     for the NeuroPawn 8, the greedy best 8, all 29 EEG electrodes, the 8
+     columns an earlier version of this project used by mistake, and the two
+     EOG channels alone (how much can eye movements alone tell apart the states?).
 
---exclude c30,c31 drops columns from the candidate pool (c30 and c31 do not
-behave like the other EEG channels: high amplitude, mostly slow activity, and
-weak correlation with every other electrode). Outputs then get a suffix.
-
-Outputs: results/metrics/channel_selection_greedy{suffix}.csv, _random, _test,
-channel_map.csv, results/figures/channel_selection{suffix}.png
+Outputs: results/metrics/channel_selection_{greedy,random,test}.csv,
+results/figures/channel_selection.png
 """
 
-import argparse
 import os
 import time
 import warnings
@@ -39,18 +35,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
+from scipy.stats import wilcoxon
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GroupKFold
 
 from common import (FIGURES_FOLDER, METRICS_FOLDER, RANDOM_STATE, smooth_probabilities,
                     smoothing_windows, zscore_by_subject)
-from feature_extraction import build_feature_table, feature_names, load_trials
+from feature_extraction import build_feature_table, load_trials
 
 warnings.filterwarnings('ignore')
 
 TRIAL_FOLDER_ALL = os.path.join('processed_data', 'trials_all')
 NEUROPAWN = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']
+# columns 2, 3, 4, 12, 14, 23, 26, 28 - what the first version of the pipeline read
+PREVIOUS_MISLABELLED = ['Fz', 'F3', 'F4', 'Cz', 'C4', 'P3', 'T6', 'O1']
+EOG = ['HEOL', 'HEOR']
 WINDOW_S = 4
 MAX_CHANNELS = 16
 N_RANDOM = 300
@@ -84,7 +84,8 @@ class SearchData:
         for f, (_, te) in enumerate(GroupKFold(n_splits=5).split(cross, y, subjects)):
             fold_id[te] = f
         self.args = dict(dep=dep, cross=cross, y=y, rounds=rounds,
-                         subjects=subjects.astype(str), trials=meta.trial_id.values[keep].astype(str),
+                         subjects=subjects.astype(str),
+                         trials=meta.trial_id.values[keep].astype(str),
                          fold_id=fold_id, k=k_smooth)
 
 
@@ -114,18 +115,18 @@ def cv_score(cols, dep, cross, y, rounds, subjects, trials, fold_id, k):
     return {'dep_cv': d, 'cross_cv': c, 'score': (d + c) / 2}
 
 
-def greedy_search(data, channels):
+def greedy_search(data, candidates, all_channels):
     chosen, rows = [], []
     for step in range(MAX_CHANNELS):
-        candidates = [c for c in channels if c not in chosen]
+        options = [c for c in candidates if c not in chosen]
         scores = Parallel(n_jobs=-1)(
-            delayed(cv_score)(columns_for(chosen + [c], channels), **data.args)
-            for c in candidates)
+            delayed(cv_score)(columns_for(chosen + [c], all_channels), **data.args)
+            for c in options)
         best = int(np.argmax([s['score'] for s in scores]))
-        chosen.append(candidates[best])
-        rows.append({'n_channels': step + 1, 'added': candidates[best],
+        chosen.append(options[best])
+        rows.append({'n_channels': step + 1, 'added': options[best],
                      'channels': ','.join(chosen), **scores[best]})
-        print(f'  {step + 1:2d}: +{candidates[best]:4s} score {scores[best]["score"]:.3f} '
+        print(f'  {step + 1:2d}: +{options[best]:4s} score {scores[best]["score"]:.3f} '
               f'(dep {scores[best]["dep_cv"]:.3f}, cross {scores[best]["cross_cv"]:.3f})',
               flush=True)
     return pd.DataFrame(rows)
@@ -157,96 +158,73 @@ def test_round4(X, meta, cols, k_smooth):
     return np.array(dep), np.array(cross)
 
 
-def channel_map(signals, channels):
-    """describe every column by the known electrodes it correlates with most (relaxed trials)"""
-    corr = []
-    for trial_id, x in signals.items():
-        if trial_id.endswith('_r1'):
-            corr.append(np.corrcoef((x - np.median(x, axis=0)).T))
-    corr = np.mean(corr, axis=0)
-    known = [i for i, c in enumerate(channels) if c in NEUROPAWN]
-    rows = []
-    for i, c in enumerate(channels):
-        nearest = [j for j in np.argsort(-corr[i]) if j != i and j in known][:2]
-        rows.append({'channel': c, 'known_position': c in NEUROPAWN,
-                     'closest_known': ', '.join(f'{channels[j]} (r={corr[i, j]:.2f})'
-                                                for j in nearest),
-                     'max_corr_any': np.sort(corr[i])[-2]})
-    return pd.DataFrame(rows)
-
-
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--exclude', default='', help='comma-separated channels to leave out')
-    args = parser.parse_args()
-    excluded = [c for c in args.exclude.split(',') if c]
-    suffix = '_excl_' + '_'.join(excluded) if excluded else ''
-
     start = time.time()
     metadata, signals, fs, all_channels = load_trials(TRIAL_FOLDER_ALL)
     X, meta, step_s = build_feature_table(metadata, signals, fs, WINDOW_S, 0.5)
-    k = smoothing_windows(step_s)
-    cmap = channel_map(signals, all_channels)
-    cmap.to_csv(os.path.join(METRICS_FOLDER, 'channel_map.csv'), index=False)
     del signals
-    # drop excluded channels' feature columns
-    channels = [c for c in all_channels if c not in excluded]
-    X = X[:, columns_for(channels, all_channels)]
-    print(f'{len(channels)} channels, {X.shape[0]} windows x {X.shape[1]} features '
+    k = smoothing_windows(step_s)
+    eeg = [c for c in all_channels if c not in EOG]
+    print(f'{len(all_channels)} channels ({len(eeg)} EEG), {X.shape[0]} windows '
           f'({time.time() - start:.0f} s)')
 
     data = SearchData(X, meta, k)
-    print('Greedy forward selection (rounds 1-3 CV):')
-    greedy = greedy_search(data, channels)
-    greedy.to_csv(os.path.join(METRICS_FOLDER, f'channel_selection_greedy{suffix}.csv'), index=False)
+    print('Greedy forward selection over EEG electrodes (rounds 1-3 CV):')
+    greedy = greedy_search(data, eeg, all_channels)
+    greedy.to_csv(os.path.join(METRICS_FOLDER, 'channel_selection_greedy.csv'), index=False)
 
     rng = np.random.default_rng(RANDOM_STATE)
-    random_sets = [list(rng.choice(channels, 8, replace=False)) for _ in range(N_RANDOM)]
+    random_sets = [list(rng.choice(eeg, 8, replace=False)) for _ in range(N_RANDOM)]
     named_sets = {'NeuroPawn 8': NEUROPAWN,
                   'Greedy best 8': greedy.channels[7].split(','),
-                  f'All {len(channels)}': channels}
+                  f'All {len(eeg)} EEG': eeg,
+                  'Previous (mislabelled) 8': PREVIOUS_MISLABELLED,
+                  'EOG only (HEOL, HEOR)': EOG}
     to_score = random_sets + list(named_sets.values())
-    scores = Parallel(n_jobs=-1)(delayed(cv_score)(columns_for(s, channels), **data.args)
+    scores = Parallel(n_jobs=-1)(delayed(cv_score)(columns_for(s, all_channels), **data.args)
                                  for s in to_score)
     random_df = pd.DataFrame([{'channels': ','.join(s), **sc}
                               for s, sc in zip(random_sets, scores[:N_RANDOM])])
-    random_df.to_csv(os.path.join(METRICS_FOLDER, f'channel_selection_random{suffix}.csv'), index=False)
+    random_df.to_csv(os.path.join(METRICS_FOLDER, 'channel_selection_random.csv'), index=False)
     named_cv = dict(zip(named_sets, scores[N_RANDOM:]))
 
-    test_rows = []
+    test_rows, per_subject = [], {}
     for name, chans in named_sets.items():
-        dep, cross = test_round4(X, meta, columns_for(chans, channels), k)
+        dep, cross = test_round4(X, meta, columns_for(chans, all_channels), k)
+        per_subject[name] = (dep, cross)
         cv = named_cv[name]
-        pct = (random_df.score < cv['score']).mean()
-        test_rows.append({'set': name, 'channels': ','.join(chans),
-                          'cv_dep': cv['dep_cv'], 'cv_cross': cv['cross_cv'],
-                          'cv_percentile_vs_random8': pct if len(chans) == 8 else np.nan,
-                          'test_dep_mean': dep.mean(), 'test_dep_std': dep.std(),
-                          'test_cross_mean': cross.mean(), 'test_cross_std': cross.std(),
-                          **{f'dep_{i + 1}': v for i, v in enumerate(dep)},
-                          **{f'cross_{i + 1}': v for i, v in enumerate(cross)}})
+        row = {'set': name, 'channels': ','.join(chans),
+               'cv_dep': cv['dep_cv'], 'cv_cross': cv['cross_cv'],
+               'cv_percentile_vs_random8': ((random_df.score < cv['score']).mean()
+                                            if len(chans) == 8 else np.nan),
+               'test_dep_mean': dep.mean(), 'test_dep_std': dep.std(),
+               'test_cross_mean': cross.mean(), 'test_cross_std': cross.std()}
+        if name != 'NeuroPawn 8':
+            base_dep, base_cross = per_subject['NeuroPawn 8']
+            for sc, a, b in (('dep', base_dep, dep), ('cross', base_cross, cross)):
+                diff = b - a
+                row[f'{sc}_vs_neuropawn'] = diff.mean()
+                row[f'{sc}_n_better'] = int(np.sum(diff > 0))
+                row[f'{sc}_wilcoxon_p'] = wilcoxon(diff).pvalue if np.any(diff) else np.nan
+        row.update({f'dep_{i + 1}': v for i, v in enumerate(dep)})
+        row.update({f'cross_{i + 1}': v for i, v in enumerate(cross)})
+        test_rows.append(row)
     test = pd.DataFrame(test_rows)
-    test.to_csv(os.path.join(METRICS_FOLDER, f'channel_selection_test{suffix}.csv'), index=False)
+    test.to_csv(os.path.join(METRICS_FOLDER, 'channel_selection_test.csv'), index=False)
 
-    pd.set_option('display.width', 200)
-    print('\nChannel map:\n' + cmap.to_string(index=False))
-    print('\nRandom 8-channel sets, CV score: '
+    pd.set_option('display.width', 220)
+    print('\nRandom 8-electrode sets, CV score: '
           f'median {random_df.score.median():.3f}, 95th pct {random_df.score.quantile(.95):.3f}')
     print('\nRound-4 test (smoothed accuracy):')
-    print(test[['set', 'channels', 'cv_dep', 'cv_cross', 'cv_percentile_vs_random8',
-                'test_dep_mean', 'test_cross_mean']].round(3).to_string(index=False))
-    # paired comparison NeuroPawn vs greedy, per subject
-    a = test.iloc[0]
-    b = test.iloc[1]
-    for sc in ('dep', 'cross'):
-        diff = np.array([b[f'{sc}_{i}'] - a[f'{sc}_{i}'] for i in range(1, 21)])
-        print(f'Greedy - NeuroPawn, {sc}: mean {diff.mean():+.3f}, better for {np.sum(diff > 0)}'
-              f'/20 subjects, worse for {np.sum(diff < 0)}')
-    draw(greedy, random_df, named_cv, suffix, f'All {len(channels)}')
+    cols = ['set', 'channels', 'cv_dep', 'cv_cross', 'cv_percentile_vs_random8',
+            'test_dep_mean', 'test_cross_mean', 'dep_vs_neuropawn', 'dep_n_better',
+            'dep_wilcoxon_p', 'cross_vs_neuropawn', 'cross_n_better', 'cross_wilcoxon_p']
+    print(test[cols].round(3).to_string(index=False))
+    draw(greedy, random_df, named_cv, f'All {len(eeg)} EEG')
     print(f'Total {time.time() - start:.0f} s')
 
 
-def draw(greedy, random_df, named_cv, suffix, all_name):
+def draw(greedy, random_df, named_cv, all_name):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     ax = axes[0]
     ax.plot(greedy.n_channels, greedy.dep_cv, 'o-', label='Subject-dependent CV')
@@ -258,7 +236,7 @@ def draw(greedy, random_df, named_cv, suffix, all_name):
         ax.annotate(r.added, (r.n_channels, r.score), fontsize=8, xytext=(0, -12),
                     textcoords='offset points', ha='center')
     ax.plot(greedy.n_channels, greedy.score, 'k-', alpha=0.3, label='Mean (selection score)')
-    ax.set_xlabel('Number of channels (greedy forward selection)')
+    ax.set_xlabel('Number of electrodes (greedy forward selection)')
     ax.set_ylabel('CV accuracy, rounds 1-3 (smoothed)')
     ax.set_title('Greedy electrode selection')
     ax.legend(fontsize=8)
@@ -268,11 +246,11 @@ def draw(greedy, random_df, named_cv, suffix, all_name):
     for name, color in (('NeuroPawn 8', 'k'), ('Greedy best 8', '#d62728')):
         ax.axvline(named_cv[name]['score'], color=color, lw=2, label=name)
     ax.set_xlabel('CV score (mean of dependent and cross-subject)')
-    ax.set_ylabel('Random 8-channel sets')
+    ax.set_ylabel('Random 8-electrode sets')
     ax.set_title(f'{len(random_df)} random 8-electrode layouts')
     ax.legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(FIGURES_FOLDER, f'channel_selection{suffix}.png'), dpi=300,
+    fig.savefig(os.path.join(FIGURES_FOLDER, 'channel_selection.png'), dpi=300,
                 bbox_inches='tight')
     plt.close(fig)
 

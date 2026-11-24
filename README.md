@@ -12,7 +12,10 @@ can record. The report is [`eeg_attention_report.pdf`](eeg_attention_report.pdf)
 
 - 20 subjects x 12 trials (4 rounds x attentive / neutral / relaxed), ~45 min per subject
 - The pipeline reads the `For_graph/` text files (32 columns at 500 Hz)
-- 8 channels kept: F3, Fz, F4, C3, C4, Pz, O1, O2
+- 8 channels kept: F3, Fz, F4, C3, C4, Pz, O1, O2, located with the dataset's
+  channel-to-electrode table (`COLUMN_ELECTRODES` in `data_processing.py`). Column 18
+  is the CPz reference (constant); columns 31-32 are horizontal EOG (HEOL, HEOR).
+  Versions before this fix read columns that are really Fz, F3, F4, Cz, C4, P3, T6, O1.
 - Labels: `a` (attentive) = focused (1); `n` (neutral) and `r` (relaxed) = unfocused (0)
 
 Put the extracted data at `MEMA Dataset/MEMA/For_graph/SubjectN/SubjectN_<state><round>.txt`.
@@ -23,7 +26,7 @@ by the pipeline.
 
 ## Pipeline
 
-Run from the project root, in order (`run_pipeline.bat` does all four):
+Run from the project root, in order (`run_pipeline.bat` does the first five):
 
 ```bash
 pip install -r requirements.txt
@@ -33,9 +36,10 @@ python model_training.py       # model selection (grouped CV), training, evaluat
 python visualization.py        # report figures
 python subject_diagnostics.py  # optional: why accuracy differs between subjects
 
-# optional: which 8 of the 32 recorded electrodes work best
+# optional: all 32 channels -> best 8 electrodes, EOG-only check, 3-class paper comparison
 python data_processing.py --all-channels
-python channel_selection.py --exclude c30,c31
+python channel_selection.py
+python paper_comparison.py
 ```
 
 | Step | Output |
@@ -44,7 +48,8 @@ python channel_selection.py --exclude c30,c31
 | `feature_extraction.py` | `processed_data/features/features_{1,2,4}s.npz`, `results/metrics/window_selection.csv`, `window_choice.json` |
 | `model_training.py` | `results/metrics/summary.csv`, `per_subject_results.csv`, `cv_*.csv`, `chosen_configs.json`, `confusion_matrices.npz`, `test_predictions.csv.gz` |
 | `visualization.py` | `results/figures/*.png` |
-| `channel_selection.py` | `results/metrics/channel_selection_*.csv`, `channel_map.csv`, `results/figures/channel_selection*.png` |
+| `channel_selection.py` | `results/metrics/channel_selection_{greedy,random,test}.csv`, `results/figures/channel_selection.png` |
+| `paper_comparison.py` | `results/metrics/paper_comparison.csv` |
 | `subject_diagnostics.py` | `results/metrics/subject_diagnostics.csv`, `diagnostics_correlations.csv`, `results/figures/subject_diagnostics.png` |
 
 ### Methods
@@ -76,17 +81,29 @@ Mean +/- std across 20 subjects (4 s windows; "smoothed" = 5 s causal probabilit
 
 | Scenario | Baseline | Raw accuracy | Smoothed accuracy | Smoothed balanced acc. | Smoothed macro F1 |
 |----------|---------:|-------------:|------------------:|-----------------------:|------------------:|
-| Subject-dependent (LDA, all features) | 55.1% | 74.0 +/- 9.9% | **77.2 +/- 11.1%** | 77.6 +/- 11.4% | 0.767 |
-| Cross-subject (nested CV: soft-voting ensembles in all 20 folds) | 52.4% | 69.3 +/- 9.5% | **73.7 +/- 11.0%** | 73.6 +/- 11.1% | 0.736 |
+| Subject-dependent (per-subject LDA, all features) | 55.1% | 69.0 +/- 11.7% | **70.6 +/- 12.9%** | 71.7 +/- 12.5% | 0.694 |
+| Cross-subject (nested CV: soft-voting ensemble in 19 of 20 folds) | 52.4% | 65.3 +/- 7.2% | **69.4 +/- 8.8%** | 69.3 +/- 8.8% | 0.693 |
 
-**Electrode selection** (`channel_selection.py`): greedy forward selection on
-rounds 1-3, tested on the untouched round 4. Swapping the NeuroPawn layout for
-the best 8 of the other recorded electrodes raised round-4 accuracy from 77.2%
-to 81.4% (calibrated) and 75.2% to 79.0% (new users). The files have no channel
-labels, so only the 8 NeuroPawn columns are named; see the report for details.
+**Electrode selection** (`channel_selection.py`): greedy forward selection over
+the 29 EEG electrodes on rounds 1-3, tested on the untouched round 4 (smoothed accuracy):
 
-The previous version reported 66.9% / 58.0%, picked as the best of 20
-configurations by test accuracy. Here, no configuration is chosen on the test set.
+| Electrodes | Calibrated user | New user |
+|------------|----------------:|---------:|
+| NeuroPawn 8 (F3, Fz, F4, C3, C4, Pz, O1, O2) | 70.6% | 71.7% |
+| Greedy best 8 (T6, FP2, T3, TP8, Cz, P3, Pz, F7) | **81.4%** | 79.0% |
+| All 29 EEG | 78.7% | **79.3%** |
+| EOG only (HEOL, HEOR) | 66.0% | 63.3% |
+
+The eye-movement channels alone are well above chance, so part of the signal is
+likely eye behaviour during the tasks rather than brain activity.
+
+**3-class comparison with the dataset paper** (`paper_comparison.py`, accuracy / macro F1,
+smoothed): all 29 EEG electrodes reach 70.4% / 63.3% subject-dependent and 69.1% / 59.3%
+cross-subject; the paper's best is 85.1% / 59.6% and 64.8% / 45.1%.
+
+The first version of this project reported 66.9% / 58.0%, using the mislabelled
+columns and picking the best of 20 configurations by test accuracy. Here, no
+configuration is chosen on the test set.
 
 ## Project structure
 
@@ -97,8 +114,9 @@ feature_extraction.py    # trials -> windowed features + window-length CV
 model_training.py        # grouped-CV model selection, training, evaluation
 visualization.py         # report figures
 subject_diagnostics.py   # per-subject signal strength, typicality, per-round accuracy
-channel_selection.py     # greedy search for the best 8 of the 32 recorded electrodes
-run_pipeline.bat         # runs all four steps
+channel_selection.py     # greedy search for the best 8 of the 29 EEG electrodes + EOG check
+paper_comparison.py      # 3-class results comparable to the MEMA paper
+run_pipeline.bat         # runs the main pipeline and diagnostics
 report.tex               # report source -> eeg_attention_report.pdf
 results/figures/         # figures used by the report
 results/metrics/         # CSV / JSON result tables

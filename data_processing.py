@@ -6,8 +6,8 @@ match the NeuroPawn headset, decimates 500 Hz -> 125 Hz and band-passes
 0.5-45 Hz. Each trial is stored as one continuous float32 signal; windowing
 happens later in feature_extraction.py so the window length can be tuned.
 
-Run with --all-channels to keep every EEG column instead (used by
-channel_selection.py); that output goes to processed_data/trials_all/.
+Run with --all-channels to keep all 31 non-reference columns instead (29 EEG +
+2 EOG, used by channel_selection.py); that output goes to processed_data/trials_all/.
 
 Output (processed_data/trials/):
     SubjectN.npz    one array per trial, keyed by trial id (e.g. "a1")
@@ -33,18 +33,23 @@ ORIGINAL_HZ = 500
 TARGET_HZ = 125
 DOWNSAMPLE_FACTOR = ORIGINAL_HZ // TARGET_HZ
 
-# column indices in the 32-column For_graph files
-CHANNEL_COLUMNS = [2, 3, 4, 12, 14, 23, 26, 28]
-CHANNEL_NAMES = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']
+# electrode of each of the 32 columns in the For_graph files, from the MEMA
+# channel/electrode table. CPz is the reference (constant column); HEOL/HEOR are
+# horizontal eye-movement (EOG) channels, not EEG.
+COLUMN_ELECTRODES = [
+    'FP1', 'FP2', 'Fz', 'F3', 'F4', 'F7', 'F8', 'FCz', 'FC3', 'FC4', 'FT7', 'FT8',
+    'Cz', 'C3', 'C4', 'T3', 'T4', 'CPz', 'CP3', 'CP4', 'TP7', 'TP8', 'Pz', 'P3',
+    'P4', 'T5', 'T6', 'Oz', 'O1', 'O2', 'HEOL', 'HEOR',
+]
+REFERENCE = 'CPz'
 
-# --all-channels: every column except 17, which is constant (no signal). The
-# files carry no channel labels, so columns outside the 8 known ones are named
-# by index (c00 ... c31).
-N_COLUMNS = 32
-CONSTANT_COLUMNS = [17]
-ALL_COLUMNS = [c for c in range(N_COLUMNS) if c not in CONSTANT_COLUMNS]
-ALL_NAMES = [CHANNEL_NAMES[CHANNEL_COLUMNS.index(c)] if c in CHANNEL_COLUMNS else f'c{c:02d}'
-             for c in ALL_COLUMNS]
+# the 8 NeuroPawn positions
+CHANNEL_NAMES = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']
+CHANNEL_COLUMNS = [COLUMN_ELECTRODES.index(ch) for ch in CHANNEL_NAMES]
+
+# --all-channels: every column except the constant reference (29 EEG + 2 EOG)
+ALL_NAMES = [ch for ch in COLUMN_ELECTRODES if ch != REFERENCE]
+ALL_COLUMNS = [COLUMN_ELECTRODES.index(ch) for ch in ALL_NAMES]
 
 BANDPASS_HZ = (0.5, 45.0)
 FILTER_ORDER = 4
@@ -75,8 +80,9 @@ def process_subject(subject, columns, output_folder):
         _, state, round_str = match.groups()
         trial_key = f'{state}{round_str}'
 
+        # usecols returns columns in file order, so reorder to match `columns`
         raw = pd.read_csv(os.path.join(subject_path, filename), header=None,
-                          usecols=columns, dtype=np.float64).values
+                          usecols=columns, dtype=np.float64)[columns].values
         clean = clean_trial(raw)
         trials[trial_key] = clean
         rows.append({

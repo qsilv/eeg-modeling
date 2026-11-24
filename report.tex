@@ -42,10 +42,12 @@ The raw MEMA data used here consists of comma-separated text files inside the \t
 
 My preprocessing script (\texttt{data\_processing.py}) treats every trial as one continuous signal:
 \begin{enumerate}
-    \item \textbf{Channel selection}: I keep only the 8 columns matching the NeuroPawn's electrode positions.
+    \item \textbf{Channel selection}: I keep only the 8 columns matching the NeuroPawn's electrode positions, located with the dataset's channel-to-electrode table (1-based channels 4, 3, 5, 14, 15, 23, 29 and 30). The table also identifies channel 18 as the CPz reference (a constant column) and channels 31--32 as horizontal eye-movement (EOG) channels.
     \item \textbf{Downsampling}: \texttt{scipy.signal.decimate} reduces the sampling rate from 500~Hz to 125~Hz, applying an anti-aliasing filter first.
     \item \textbf{Band-pass filtering}: a 4th-order Butterworth filter (second-order sections, zero-phase \texttt{sosfiltfilt}) keeps 0.5--45~Hz, removing slow drift and high-frequency noise.
 \end{enumerate}
+\textbf{Correction.} Earlier versions of this project (including the first version of this report) read columns that were assumed to be F3, Fz, F4, C3, C4, Pz, O1 and O2 but are actually Fz, F3, F4, Cz, C4, P3, T6 and O1. Five of the eight overlap, but C3, Pz and O2 were missing. The mapping was checked against the data: every electrode's signal correlates most strongly with its physical neighbours (for example F3 with FC3, T4 with TP8, O1 with Oz). All results in this report use the corrected columns, and Section~\ref{sec:channels} compares both sets directly.
+
 Each cleaned trial is stored as a single float32 array together with its metadata (subject, round 1--4, state \texttt{a}/\texttt{n}/\texttt{r}, trial id). Files are processed in sorted order so the output is reproducible. Windowing is deferred to the feature step so that the window length can be tuned.
 
 \section{Windowing and Feature Extraction}
@@ -65,9 +67,9 @@ I compared 1~s, 2~s and 4~s windows by cross-validation on rounds 1--3 only (rou
 Window & Step & Windows & \multicolumn{2}{c}{Subject-dependent} & \multicolumn{2}{c}{Cross-subject} \\
  & & & Raw & Smoothed & Raw & Smoothed \\
 \midrule
-1 s & 0.5 s & 108{,}097 & 61.8\% & 66.8\% & 60.8\% & 70.0\% \\
-2 s & 1 s & 53{,}578 & 63.8\% & 67.9\% & 63.1\% & 70.6\% \\
-4 s & 2 s & 26{,}639 & \textbf{68.5\%} & \textbf{70.6\%} & \textbf{67.6\%} & \textbf{71.6\%} \\
+1 s & 0.5 s & 108{,}097 & 60.9\% & 64.7\% & 59.6\% & 66.2\% \\
+2 s & 1 s & 53{,}578 & 62.1\% & 65.2\% & 61.0\% & 67.1\% \\
+4 s & 2 s & 26{,}639 & \textbf{64.8\%} & \textbf{66.3\%} & \textbf{65.3\%} & \textbf{69.3\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -127,11 +129,11 @@ For each test subject I compute accuracy, balanced accuracy and macro F1, and re
 
 \subsection{Selected configurations}
 
-Figure~\ref{fig:cv} shows the cross-validated accuracy of every model and feature-selection method; these are the scores the configurations were chosen by. The differences between the best candidates are small (about one percentage point), while KNN is clearly weaker.
+Figure~\ref{fig:cv} shows the cross-validated accuracy of every model and feature-selection method; these are the scores the configurations were chosen by. The differences between the best candidates are small (well under one percentage point), while KNN is clearly weaker.
 
 \begin{itemize}
-    \item \textbf{Subject-dependent}: shrinkage LDA on all 88 features, trained per subject (\emph{own} pool), CV accuracy 72.2\%. The best pooled candidate (LightGBM on PCA components, trained on all subjects' rounds 1--3) was close behind at 71.8\%, and the best ensemble (LDA + LightGBM) reached 72.1\%, so combining models did not help here.
-    \item \textbf{Cross-subject}: every outer fold chose an ensemble on all 88 features: all four models in 11 of the 20 folds, and logistic regression + random forest + LightGBM in the other 9. In a run without ensembles, the folds had picked random forest (11), LightGBM (5) and logistic regression (4), and reached 72.3\% smoothed accuracy; the ensembles add 1.4 points (better for 13 subjects, worse for 4; Wilcoxon signed-rank $p = 0.005$).
+    \item \textbf{Subject-dependent}: shrinkage LDA on all 88 features, trained per subject (\emph{own} pool), CV accuracy 69.8\%. The best pooled candidate (LightGBM trained on all subjects' rounds 1--3) reached 69.5\% and the best ensemble 69.3\%, so neither pooling nor combining models helped here.
+    \item \textbf{Cross-subject}: 19 of the 20 outer folds chose an ensemble on all 88 features (logistic regression + random forest + LightGBM in 17 folds, all four models in 2); one fold chose a random forest. In the inner CV, the best ensemble scored 67.6\% against 67.2\% for the best single model.
 \end{itemize}
 
 \begin{figure}[H]
@@ -147,24 +149,24 @@ Table~\ref{tab:results} reports the test performance of the selected pipelines. 
 
 \begin{table}[H]
 \centering
-\caption{Test results, mean $\pm$ standard deviation across the 20 subjects. ``Raw'' scores single 4~s windows; ``smoothed'' averages the predicted probability over the past 5~s within the trial.}
+\caption{Test results with the NeuroPawn electrodes, mean $\pm$ standard deviation across the 20 subjects. ``Raw'' scores single 4~s windows; ``smoothed'' averages the predicted probability over the past 5~s within the trial.}
 \label{tab:results}
 \begin{tabular}{llccc}
 \toprule
 Scenario & Output & Accuracy & Balanced acc. & Macro F1 \\
 \midrule
 Subject-dependent & Baseline & 55.1\% & 50.0\% & -- \\
- & Raw window & 74.0 $\pm$ 9.9\% & 74.3 $\pm$ 10.2\% & 0.737 $\pm$ 0.103 \\
- & Smoothed & \textbf{77.2 $\pm$ 11.1\%} & \textbf{77.6 $\pm$ 11.4\%} & \textbf{0.767 $\pm$ 0.116} \\
+ & Raw window & 69.0 $\pm$ 11.7\% & 69.9 $\pm$ 11.2\% & 0.680 $\pm$ 0.126 \\
+ & Smoothed & \textbf{70.6 $\pm$ 12.9\%} & \textbf{71.7 $\pm$ 12.5\%} & \textbf{0.694 $\pm$ 0.141} \\
 \midrule
 Cross-subject & Baseline & 52.4\% & 50.0\% & -- \\
- & Raw window & 69.3 $\pm$ 9.5\% & 69.3 $\pm$ 9.6\% & 0.692 $\pm$ 0.096 \\
- & Smoothed & \textbf{73.7 $\pm$ 11.0\%} & \textbf{73.6 $\pm$ 11.1\%} & \textbf{0.736 $\pm$ 0.111} \\
+ & Raw window & 65.3 $\pm$ 7.2\% & 65.2 $\pm$ 7.3\% & 0.652 $\pm$ 0.073 \\
+ & Smoothed & \textbf{69.4 $\pm$ 8.8\%} & \textbf{69.3 $\pm$ 8.8\%} & \textbf{0.693 $\pm$ 0.089} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The previous version of this project reached 66.9\% (subject-dependent) and 58.0\% (cross-subject) with its best configurations. The new pipeline gains about 10 and 16 percentage points after smoothing, and 7 and 11 points on raw windows. The comparison understates the improvement: the old numbers came from picking the best of 20 model/feature combinations by test accuracy, which inflates them, whereas the new configurations were chosen without looking at the test data.
+The previous version of this project reported 66.9\% (subject-dependent) and 58.0\% (cross-subject). Those numbers came from the mislabelled electrode set and from picking the best of 20 model/feature combinations by test accuracy, so they are not directly comparable. The new numbers use the correct electrodes and configurations chosen without looking at the test data. They are 3.7 points higher subject-dependent and 11.4 points higher cross-subject after smoothing. With the mislabelled set, the same new pipeline reached 77.2\% and 73.7\%. The difference comes from the electrodes, not the method (Section~\ref{sec:channels}).
 
 \begin{figure}[H]
     \centering
@@ -173,18 +175,25 @@ The previous version of this project reached 66.9\% (subject-dependent) and 58.0
     \label{fig:subjects}
 \end{figure}
 
-Performance varies a lot between people (Figure~\ref{fig:subjects}): smoothed accuracy ranges from 52\% to 92\% in the subject-dependent scenario and from 56\% to 94\% across subjects. All 20 held-out subjects are above the cross-subject baseline, although subject~11 only barely; in the subject-dependent scenario subject~16 stays at chance.
+Performance varies a lot between people (Figure~\ref{fig:subjects}): smoothed accuracy ranges from 43\% to 91\% in the subject-dependent scenario and from 55\% to 85\% across subjects. All 20 held-out subjects are above the cross-subject baseline. In the subject-dependent scenario, subjects 5, 8 and 16 are at or below the baseline.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{results/figures/confusion_matrix.png}
+    \caption{Confusion matrices aggregated over all 20 subjects for the selected pipelines (rows normalized), raw and smoothed.}
+    \label{fig:confusion}
+\end{figure}
 
 \subsection{Why accuracy differs between subjects}
 
 To understand the spread, \texttt{subject\_diagnostics.py} computes a few descriptive measures per subject (Figure~\ref{fig:diagnostics}). With 20 subjects, the correlations below are indicative rather than conclusive.
 
 \begin{itemize}
-    \item \textbf{The common pattern.} Across subjects, the most consistent difference is \emph{more} theta power over the occipital and parietal electrodes (O1, O2, Pz) during the attentive task, together with higher theta/alpha and theta/beta ratios. The direction is the same in 85--100\% of subjects. Occipital theta is not the textbook attention marker, so part of this signal may come from the task itself (for example, visual demands or eye movements) rather than from attention in general.
-    \item \textbf{Signal strength.} How different the two states look for a person (mean $|d|$ of their 10 most different features) tracks test accuracy closely (Spearman $\rho = 0.75$ subject-dependent, $0.74$ cross-subject). This measure uses all of the person's labels, so it describes rather than explains: for low scorers such as subjects 8, 16 and 19, focused and unfocused recordings simply look alike.
-    \item \textbf{Typicality.} How closely a person's pattern matches the average pattern of the other 19 subjects predicts cross-subject accuracy ($\rho = 0.62$) but not subject-dependent accuracy ($\rho = 0.10$). Subjects 3, 10 and 11 have unusual patterns: subjects 10 and 11 reach 92\% and 78\% with their own model but only 65\% and 56\% with a model trained on others.
-    \item \textbf{Changes within the session.} Holding out each round in turn (right panel) shows that some people only become readable later. Subjects 9 and 15 score about 45--54\% on rounds 1--2 but over 80\% on rounds 3--4. Subject~16 is poor in every round, and their pattern in round 4 even points the other way from rounds 1--3 (correlation $-0.18$). This is why their own model fails (52\%) while the population model does better (68\%).
-    \item \textbf{Noise.} The rate of large-amplitude bursts and the share of high-frequency (muscle) power were not lower for good subjects. A high share of slow frontal power, typical of eye movements and drift, was weakly associated with lower accuracy ($\rho = -0.40$, $p = 0.08$). Subject~8 has the highest value (0.87), the weakest signal, and is poor in every round. Either eye artifacts or not following the task instructions would explain this; the data cannot tell them apart.
+    \item \textbf{The common pattern.} Across subjects, the most consistent difference is \emph{more} theta power over the occipital electrodes (O1, O2) during the attentive task, together with higher theta/alpha and theta/beta ratios at O1, O2, C3 and F3. The direction is the same in 80--90\% of subjects.
+    \item \textbf{Signal strength.} How different the two states look for a person (mean $|d|$ of their 10 most different features) tracks test accuracy closely (Spearman $\rho = 0.79$ subject-dependent, $0.64$ cross-subject). This measure uses all of the person's labels, so it describes rather than explains: for low scorers such as subjects 5, 8, 16 and 19, focused and unfocused recordings simply look alike at these electrodes.
+    \item \textbf{Stability across rounds.} Whether a person's focused-vs-unfocused pattern in round~4 matches rounds 1--3 strongly predicts subject-dependent accuracy ($\rho = 0.71$, $p < 0.001$). For subjects 9 and 16 the pattern even reverses (correlation $-0.11$ and $-0.08$). Their own model then fails (63\% and 43\%), while the population model does better (71\% and 64\%). Subject~5's round-4 features moved furthest from rounds 1--3 (0.74 standard deviations), and their own model is at chance on round~4 (50\%) but not on the other rounds. Subject~15 is only readable later in the session: about 45\% when round 1 or 2 is held out, over 80\% for rounds 3--4.
+    \item \textbf{Typicality.} How closely a person's pattern matches the average of the other 19 subjects relates to cross-subject accuracy ($\rho = 0.43$, $p = 0.06$) but not to subject-dependent accuracy. Subjects 3, 10, 11 and 12 have unusual patterns and reach 75--91\% with their own model but only 55--68\% with a model trained on others.
+    \item \textbf{Noise.} The rate of large-amplitude bursts, the share of muscle-band power and the share of slow frontal power showed no clear association with accuracy ($|\rho| \le 0.33$, all $p > 0.15$).
 \end{itemize}
 
 \begin{figure}[H]
@@ -194,20 +203,12 @@ To understand the spread, \texttt{subject\_diagnostics.py} computes a few descri
     \label{fig:diagnostics}
 \end{figure}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{results/figures/confusion_matrix.png}
-    \caption{Confusion matrices aggregated over all 20 subjects for the selected pipelines (rows normalized), raw and smoothed.}
-    \label{fig:confusion}
-\end{figure}
+\subsection{Electrode placement and eye movements}
+\label{sec:channels}
 
-The errors are fairly symmetric (Figure~\ref{fig:confusion}): smoothing reduces both false ``focused'' and false ``unfocused'' predictions rather than shifting the decision towards one class.
+The NeuroPawn positions are fixed by the headset, but the MEMA recordings contain all 32 channels, so \texttt{channel\_selection.py} asks two questions: would another 8 EEG electrodes work better, and how much can the eye-movement channels alone tell apart the two states? The 29 EEG electrodes are candidates; the CPz reference and the two EOG channels are not.
 
-\subsection{Could a different set of 8 electrodes do better?}
-
-The NeuroPawn positions are fixed by the headset, but the MEMA recordings contain all 32 electrodes, so \texttt{channel\_selection.py} asks whether another 8 would work better. The files carry no channel labels. One column is constant (the dataset paper places the reference at CPz), leaving 31. Only the 8 NeuroPawn columns have known names; the others are named by column (\texttt{c01}, \texttt{c05}, \ldots) and described by the known electrodes they correlate with most. Two columns (\texttt{c30}, \texttt{c31}) do not behave like the rest: they have high amplitude, mostly slow activity, and weak correlation with every other electrode. They are excluded from the main analysis.
-
-\textbf{Protocol.} Greedy forward selection starts with no electrodes and repeatedly adds the one that most improves the score, up to 16. The score is the mean of the subject-dependent CV (per-subject LDA, leave-one-round-out) and cross-subject CV (LDA, GroupKFold by subject), computed on rounds 1--3 only. The resulting 8-electrode set is then tested on round 4, which the search never saw, with fixed models: per-subject LDA trained on rounds 1--3 for the subject-dependent case, and a random forest trained on the other 19 subjects for the cross-subject case. These fixed models make the NeuroPawn numbers in Table~\ref{tab:channels} slightly different from Table~\ref{tab:results}, but all three sets are compared under the same protocol.
+\textbf{Protocol.} Greedy forward selection starts with no electrodes and repeatedly adds the one that most improves the score, up to 16. The score is the mean of the subject-dependent CV (per-subject LDA, leave-one-round-out) and cross-subject CV (LDA, GroupKFold by subject), computed on rounds 1--3 only. Each electrode set is then tested on round 4, which the search never saw, with fixed models: per-subject LDA trained on rounds 1--3 for the subject-dependent case, and a random forest trained on the other 19 subjects for the cross-subject case. These fixed models make the NeuroPawn numbers in Table~\ref{tab:channels} slightly different from Table~\ref{tab:results}, but all sets are compared under the same protocol.
 
 \begin{table}[H]
 \centering
@@ -219,36 +220,65 @@ The NeuroPawn positions are fixed by the headset, but the MEMA recordings contai
  & \multicolumn{2}{c}{CV, rounds 1--3} & \multicolumn{2}{c}{Test, round 4} \\
 Electrode set & Dependent & Cross & Dependent & Cross \\
 \midrule
-NeuroPawn 8 (F3, Fz, F4, C3, C4, Pz, O1, O2) & 72.2\% & 69.8\% & 77.2\% & 75.2\% \\
-Greedy best 8 (O1, c01, c15, c21, C3, Pz, c22, c05) & 77.5\% & 76.4\% & \textbf{81.4\%} & 79.0\% \\
-All 29 EEG-like channels & 74.6\% & 73.7\% & 78.7\% & \textbf{79.3\%} \\
+NeuroPawn 8 (F3, Fz, F4, C3, C4, Pz, O1, O2) & 69.8\% & 64.5\% & 70.6\% & 71.7\% \\
+Greedy best 8 (T6, FP2, T3, TP8, Cz, P3, Pz, F7) & 77.5\% & 76.4\% & \textbf{81.4\%} & 79.0\% \\
+All 29 EEG electrodes & 74.6\% & 73.7\% & 78.7\% & \textbf{79.3\%} \\
+Mislabelled 8 (Fz, F3, F4, Cz, C4, P3, T6, O1) & 72.2\% & 69.8\% & 77.2\% & 75.2\% \\
+EOG only (HEOL, HEOR) & 67.5\% & 65.5\% & 66.0\% & 63.3\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{results/figures/channel_selection_excl_c30_c31.png}
+    \includegraphics[width=\textwidth]{results/figures/channel_selection.png}
     \caption{Left: CV accuracy as greedy selection adds electrodes (labels show the electrode added at each step). Right: CV score of 300 random 8-electrode layouts. The greedy set was optimized on this same score, so its position is optimistic; round~4 in Table~\ref{tab:channels} is the fair comparison.}
     \label{fig:channels}
 \end{figure}
 
 \begin{itemize}
-    \item \textbf{A better layout exists.} On round~4 the greedy set beats the NeuroPawn layout by 4.1 points for calibrated users (better for 13 of 20 subjects; Wilcoxon $p = 0.11$, not significant) and 3.8 points for new users (13 of 20; $p = 0.02$). Among 300 random 8-electrode layouts, the NeuroPawn layout ranks at the 76th percentile.
-    \item \textbf{Which electrodes.} The greedy set keeps O1, C3 and Pz. It drops F3, Fz, F4, C4 and O2, and instead adds two frontal electrodes (\texttt{c01}, \texttt{c05}) and three over the back of the head (\texttt{c21} next to O1, \texttt{c22} between O2 and Pz, \texttt{c15} near Pz). The two frontal ones have the largest share of slow activity of all EEG-like channels, which suggests sites close to the eyes. Part of their contribution may therefore come from eye behaviour during the tasks rather than brain activity. Without the dataset's channel labels the exact positions cannot be named.
-    \item \textbf{More is not always better.} Using all 29 channels (319 features) matches the best 8 across subjects but is worse for calibrated users. With about 1{,}000 training windows per person, extra features mostly add noise. The CV curve flattens after about 8--10 electrodes.
-    \item \textbf{Including \texttt{c30}/\texttt{c31}.} When the two unusual columns are allowed, the search picks \texttt{c30} second, and the best 8 reach 82.2\% / 78.3\% on round~4. Since it is unclear what \texttt{c30} records, this variant is not the recommended one.
+    \item \textbf{The NeuroPawn layout is a weak choice for this task.} It ranks at the 19th percentile of 300 random 8-electrode layouts. On round~4 the greedy set beats it by 10.7 points for calibrated users (better for 17 of 20 subjects; Wilcoxon $p = 0.002$) and 7.3 points for new users (15 of 20; $p = 0.009$).
+    \item \textbf{Which electrodes.} The greedy set favours the sides of the head (T3, T6, TP8), adds the front (FP2 above the right eye, F7 at the left temple), and keeps three central-parietal sites (Cz, Pz, P3). The NeuroPawn layout has no temporal or frontopolar electrodes at all.
+    \item \textbf{Eye movements carry part of the signal.} The two horizontal EOG channels alone reach 66\% and 63\% on round~4, well above the 55\% and 52\% baselines, so the participants' eyes moved differently during the attentive task. The electrodes the search prefers (temporal sites, FP2, F7) are also the ones that pick up most eye-movement and jaw/scalp-muscle activity. Part of the gain from a better layout is therefore likely to come from eye and muscle activity rather than brain activity. For a product this may still be a useful signal, but it is not evidence of a brain-based attention marker.
+    \item \textbf{More is not always better.} All 29 electrodes (319 features) match the best 8 across subjects but are worse for calibrated users: with about 1{,}000 training windows per person, extra features mostly add noise. The CV curve flattens after about 8--10 electrodes.
 \end{itemize}
+
+\subsection{Comparison with the dataset paper}
+
+The MEMA paper (Liu et al., Table~II) reports baselines for the same data and splits (rounds 1--3 vs.\ round~4, and leave-one-subject-out), but it classifies all \emph{three} states (attentive, neutral, relaxed) with all 32 channels. To compare like with like, \texttt{paper\_comparison.py} runs this project's pipeline on the 3-class task, reusing the models selected above without new tuning.
+
+\begin{table}[H]
+\centering
+\caption{3-class attention classification: accuracy and macro F1 (\%), mean over 20 subjects. This project: 4~s windows, raw / 5~s smoothed. The paper's window length, features and averaging are not stated, so the comparison is approximate.}
+\label{tab:paper}
+\small
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{Subject-dependent} & \multicolumn{2}{c}{Cross-subject} \\
+Method & Accuracy & F1 & Accuracy & F1 \\
+\midrule
+Paper, best classical (DT / SVM) & 82.4 & 57.8 & 62.3 & 43.4 \\
+Paper, best overall (EEGNet) & 85.1 & 59.6 & 64.8 & 45.1 \\
+Paper, range of 6 methods & 78.7--85.1 & 47.6--59.6 & 56.0--64.8 & 41.9--45.2 \\
+\midrule
+This project, all 29 EEG electrodes & 66.9 / 70.4 & 60.3 / 63.3 & 63.4 / 69.1 & 54.5 / 59.3 \\
+This project, NeuroPawn 8 & 59.5 / 62.1 & 52.6 / 55.1 & 54.5 / 59.4 & 46.6 / 50.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across subjects, this pipeline with 29 electrodes comes within 1.5 points of the paper's best accuracy on raw windows (63.4\% vs.\ 64.8\%) and exceeds it after smoothing (69.1\%). Its macro F1 is 9--14 points higher than any of the paper's methods. Within subjects, the paper's accuracy is much higher (79--85\% vs.\ 67--70\%), but its F1 is lower than or equal to this pipeline's (48--60\% vs.\ 60--63\%). High accuracy with low macro F1 usually means a classifier is mostly predicting the two long states and missing the short neutral state (one minute per round), which this pipeline handles better through balanced class weights. With only the NeuroPawn electrodes, the 3-class task is clearly harder (about 60\% accuracy).
 
 \subsection{Key Observations}
 
 \begin{enumerate}
-    \item \textbf{Per-subject normalization matters most across people.} In an earlier experiment with the old 1~s features, per-subject z-scoring alone moved cross-subject accuracy from 57.4\% to 61.8\%. It removes each person's overall amplitude and spectral offsets, which are larger than the differences between attention states.
-    \item \textbf{Temporal context is the largest single lever.} Longer windows (Table~\ref{tab:windows}) and probability smoothing both add context, and both help. Figure~\ref{fig:smoothing} shows that accuracy keeps rising with longer smoothing horizons. The 5~s setting was fixed in advance and is the one reported; the curve is only a sensitivity analysis, and choosing the horizon from it would be tuning on the test set.
-    \item \textbf{Model choice matters less once the inputs are normalized.} Linear models (LDA, logistic regression) and tree ensembles (random forest, LightGBM) are within about one point of each other in CV. Averaging a linear model with tree models gives a small but consistent cross-subject gain (+1.4 points), because their errors only partly overlap. A shrinkage LDA, the simplest model, was the best per-subject choice: with only about 1{,}000 training windows per subject, a strongly regularized linear model is hard to beat.
-    \item \textbf{Feature selection did not help.} Keeping all 88 features was chosen in both scenarios. With per-subject z-scoring and regularized models, removing features mostly removes information.
-    \item \textbf{Things that did not help.} Earlier experiments found no gain from relative band power, Hjorth parameters, alpha asymmetry, or z-scoring round~4 with its own statistics. A cross-validation check on rounds 1--3 with log-Euclidean covariance features (36 extra features) gave $+1.0$ point cross-subject and $-0.2$ subject-dependent. This is within fold-to-fold noise, so the features were not adopted.
-    \item \textbf{Skepticism of literature benchmarks.} Prior studies reported very high accuracies on similar tasks, such as 91.7\% (Aci et al., 2019) and 99.6\% (Wang \& Kim). Even with 32-channel, 500~Hz data that is surprising. A common cause of such numbers is splitting overlapping windows from the same recording into training and test sets, which this project avoids by always holding out whole rounds or subjects.
+    \item \textbf{Where the electrodes are matters as much as the model.} Moving the same 8-electrode budget to better positions gained 7--11 points, more than any modelling change.
+    \item \textbf{Per-subject normalization matters most across people.} In an earlier experiment (on the mislabelled electrode set), per-subject z-scoring alone moved cross-subject accuracy from 57.4\% to 61.8\%. It removes each person's overall amplitude and spectral offsets, which are larger than the differences between attention states.
+    \item \textbf{Temporal context helps.} Longer windows (Table~\ref{tab:windows}) and probability smoothing both add context. Figure~\ref{fig:smoothing} shows that accuracy keeps rising with longer smoothing horizons. The 5~s setting was fixed in advance and is the one reported; the curve is only a sensitivity analysis, and choosing the horizon from it would be tuning on the test set.
+    \item \textbf{Model choice matters little once the inputs are normalized.} Linear models and tree ensembles are within about one point of each other in CV. For new users, a soft-voting ensemble of linear and tree models was chosen in 19 of 20 folds, but its CV advantage was small (0.4 points). For calibrated users, a shrinkage LDA was best: with only about 1{,}000 training windows per person, a strongly regularized linear model is hard to beat.
+    \item \textbf{Feature selection did not help.} Keeping all 88 features was chosen in both scenarios.
+    \item \textbf{Things that did not help.} Earlier experiments (on the mislabelled electrode set) found no gain from relative band power, Hjorth parameters, alpha asymmetry, z-scoring round~4 with its own statistics, or log-Euclidean covariance features.
+    \item \textbf{Skepticism of literature benchmarks.} Some studies report 91.7\% (Aci et al., 2019) or 99.6\% (Wang \& Kim) on similar tasks. A common cause of such numbers is splitting overlapping windows from the same recording into training and test sets, which this project avoids by always holding out whole rounds or subjects. The dataset's own paper, which also holds out whole rounds and subjects, reports numbers in the same range as this project.
 \end{enumerate}
 
 \begin{figure}[H]
@@ -263,18 +293,19 @@ All 29 EEG-like channels & 74.6\% & 73.7\% & 78.7\% & \textbf{79.3\%} \\
 Several limitations should be noted.
 
 \begin{itemize}
+    \item \textbf{Eye movements.} The EOG channels alone separate the states well above chance, so part of what any EEG model learns here may be eye behaviour during the task rather than attention itself. This is most likely for electrodes near the eyes and temples. Removing eye artifacts (for example by regressing out the EOG channels, or with ICA) before classification would show how much of the accuracy remains.
     \item \textbf{Block design favours smoothing.} Each trial is one to five minutes of a single state, so averaging over the past few seconds almost always averages over the same label. When attention switches quickly in real use, smoothing will help less, and every switch will be detected with a delay of up to the smoothing horizon plus the 4~s window.
     \item \textbf{Calibration data for normalization.} The cross-subject result assumes that a new user's feature statistics are known. Here they come from all of the held-out subject's recordings, which mix focused and unfocused time in roughly the same proportion as the other subjects. A deployed system would have to estimate them from a short unlabeled recording, and a very different mix of states in that recording would shift the statistics.
-    \item \textbf{Shared design decisions.} The window length and the decision not to add covariance features were made by cross-validation on rounds 1--3 of all subjects. Round~4 was never used, so the subject-dependent results are clean, but in the cross-subject evaluation the held-out subjects' rounds 1--3 contributed to these two choices. Model, feature-selection method and hyperparameters were chosen fully inside the nested loop.
+    \item \textbf{Shared design decisions.} The window length was chosen by cross-validation on rounds 1--3 of all subjects. Round~4 was never used, so the subject-dependent results are clean, but in the cross-subject evaluation the held-out subjects' rounds 1--3 contributed to this choice. Model, feature-selection method and hyperparameters were chosen fully inside the nested loop.
     \item \textbf{Offline filtering.} The band-pass filter is zero-phase (\texttt{sosfiltfilt}) over whole trials, which uses future samples. A real-time system would need a causal filter, which may change the results slightly.
-    \item \textbf{Research-grade data.} The data was recorded with research-grade equipment and artificially restricted to 8 channels. A real NeuroPawn headset would add noise from dry electrodes and motion. Validating on actual consumer hardware is a necessary next step.
+    \item \textbf{Research-grade data.} The data was recorded with research-grade wet electrodes. A real NeuroPawn headset would add noise from dry electrodes and motion. Validating on actual consumer hardware is a necessary next step.
 \end{itemize}
 
-Future work: confirm the alternative electrode layout on real hardware (ideally with labelled positions and an eye-movement reference channel), add a short labelled calibration step for new users, and try deep learning architectures such as EEGNet, which learn spatial and temporal filters directly from the raw signal.
+Future work: remove eye artifacts using the EOG channels and re-measure, test the alternative electrode layout on real hardware, add a short labelled calibration step for new users, and try deep learning architectures such as EEGNet, which learn spatial and temporal filters directly from the raw signal.
 
 \section{Conclusion}
 
-This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating the constraints of a budget 8-channel, 125~Hz headset. With per-subject feature normalization, 4~s windows, model selection by grouped cross-validation, and 5~s causal smoothing of the predicted probabilities, classical methods reach 77.2\% accuracy for a calibrated user and 73.7\% for an unseen user, against baselines of 55.1\% and 52.4\%. The most useful changes were statistical rather than model-related: normalizing each person's features and using more temporal context did more than switching between classifiers. The electrode study also suggests that the headset's fixed layout is not optimal: a different 8 electrodes, with more coverage over the back of the head and at the front, gained about 4 points on held-out data. These findings give NeuraXtension a concrete starting point: a regularized linear model (for a calibrated user) or an ensemble of linear and tree models (for a new user) on normalized band-power features, plus a short calibration recording for each new user.
+This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating the constraints of a budget 8-channel, 125~Hz headset. With the headset's electrode positions, per-subject feature normalization, 4~s windows, model selection by grouped cross-validation, and 5~s causal smoothing, classical methods reach 70.6\% accuracy for a calibrated user and 69.4\% for an unseen user, against baselines of 55.1\% and 52.4\%. On the dataset's 3-class task with all electrodes, the same pipeline matches or beats the dataset authors' published baselines across subjects. The biggest single factor was electrode placement: the NeuroPawn layout is below the median of random 8-electrode layouts, and a better layout gained 7--11 points. Part of that gain, and part of the signal in general, appears to come from eye movements rather than brain activity, which should be checked before building on it. For NeuraXtension this means: per-subject normalization and a short calibration recording are worth having, and if the headset allows electrodes to be moved, temporal and parietal positions are worth testing.
 
 \newpage
 \section*{Project Experience Summary}
@@ -282,9 +313,9 @@ This project built an end-to-end pipeline from 90~GB of raw EEG text files to tr
 \textbf{EEG Attention State Classifier: Brain-Computer Interface}
 \begin{itemize}
     \item Built an end-to-end Python pipeline (NumPy, SciPy, scikit-learn, LightGBM) that turns 90~GB of raw 32-channel EEG into an 8-channel, 125~Hz attention classifier matching a budget consumer headset.
-    \item Reached 77.2\% accuracy for calibrated users and 73.7\% for unseen users (baselines 55.1\% and 52.4\%), up from 66.9\% and 58.0\%, using per-subject feature normalization, tuned window length, model ensembling and causal probability smoothing.
+    \item Reached 70.6\% accuracy for calibrated users and 69.4\% for unseen users (baselines 55.1\% and 52.4\%), using per-subject feature normalization, tuned window length, model ensembling and causal probability smoothing; on the dataset's 3-class task, matched or exceeded the dataset authors' published cross-subject baselines.
     \item Selected models without test-set leakage using grouped and nested cross-validation (leave-one-round-out and leave-one-subject-out), comparing 55 pipeline configurations (5 feature-selection methods $\times$ 11 classifier settings and ensembles) for each of 20 held-out subjects.
-    \item Ran a greedy electrode-selection study over all 31 recorded channels, finding an alternative 8-electrode layout that improved held-out accuracy by about 4 percentage points over the headset's fixed layout.
+    \item Ran a greedy electrode-selection study over 29 EEG channels, finding an 8-electrode layout that improved held-out accuracy by 7--11 percentage points over the headset's fixed layout, and used the EOG channels to show that eye movements carry part of the signal.
     \item Parallelized the nested evaluation with joblib across 16 CPU threads, completing the full cross-subject model search in about 25 minutes.
 \end{itemize}
 
