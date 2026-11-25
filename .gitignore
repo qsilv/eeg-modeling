@@ -1,1 +1,13 @@
 /MEMA Dataset
+
+# derived data (regenerate with data_processing.py / feature_extraction.py)
+/processed_data/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
+__pycache__/
