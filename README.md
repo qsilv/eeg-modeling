@@ -12,10 +12,11 @@ with 8 movable dry electrodes) can record. The report is [`eeg_attention_report.
 
 - 20 subjects x 12 trials (4 rounds x attentive / neutral / relaxed), ~45 min per subject
 - The pipeline reads the `For_graph/` text files (32 columns at 500 Hz)
-- 8 channels kept: F3, Fz, F4, C3, C4, Pz, O1, O2, located with the dataset's
-  channel-to-electrode table (`COLUMN_ELECTRODES` in `data_processing.py`). Column 18
-  is the CPz reference (constant); columns 31-32 are horizontal EOG (HEOL, HEOR).
-  Versions before this fix read columns that are really Fz, F3, F4, Cz, C4, P3, T6, O1.
+- The NeuroPawn's electrodes are movable, so the layout is a choice. The main pipeline
+  keeps F3, Fz, F4, P3, P4, Pz, O1, O2 (chosen in `channel_selection.py`, see below).
+  Columns are located by name with the dataset's channel-to-electrode table
+  (`COLUMN_ELECTRODES` in `data_processing.py`); column 18 is the CPz reference
+  (constant) and columns 31-32 are horizontal EOG (HEOL, HEOR).
 - Labels: `a` (attentive) = focused (1); `n` (neutral) and `r` (relaxed) = unfocused (0)
 
 Put the extracted data at `MEMA Dataset/MEMA/For_graph/SubjectN/SubjectN_<state><round>.txt`.
@@ -53,7 +54,7 @@ python channel_selection.py --remove-eog   # same search with eye-movement signa
 
 ### Methods
 
-- **Preprocessing**: 8 channels, `decimate` 500 -> 125 Hz, 4th-order Butterworth
+- **Preprocessing**: 8 electrodes (F3, Fz, F4, P3, P4, Pz, O1, O2), `decimate` 500 -> 125 Hz, 4th-order Butterworth
   band-pass 0.5-45 Hz (`sosfiltfilt`), applied to each trial as one continuous signal.
 - **Windowing** (at feature time): 1 s, 2 s and 4 s windows with 50 % overlap are
   compared by cross-validation on rounds 1-3 only; 4 s won in both scenarios.
@@ -80,32 +81,33 @@ Mean +/- std across 20 subjects (4 s windows; "smoothed" = 5 s causal probabilit
 
 | Scenario | Baseline | Raw accuracy | Smoothed accuracy | Smoothed balanced acc. | Smoothed macro F1 |
 |----------|---------:|-------------:|------------------:|-----------------------:|------------------:|
-| Subject-dependent (per-subject LDA, all features) | 55.1% | 69.0 +/- 11.7% | **70.6 +/- 12.9%** | 71.7 +/- 12.5% | 0.694 |
-| Cross-subject (nested CV: soft-voting ensemble in 19 of 20 folds) | 52.4% | 65.3 +/- 7.2% | **69.4 +/- 8.8%** | 69.3 +/- 8.8% | 0.693 |
+| Subject-dependent (LightGBM on all subjects' rounds 1-3) | 55.1% | 70.6 +/- 9.7% | **75.1 +/- 10.6%** | 75.6 +/- 10.2% | 0.744 |
+| Cross-subject (nested CV: soft-voting ensemble in all 20 folds) | 52.4% | 68.5 +/- 9.6% | **73.0 +/- 11.3%** | 73.0 +/- 11.4% | 0.729 |
 
-**Electrode selection** (`channel_selection.py`): greedy forward selection over
-the 29 EEG electrodes on rounds 1-3, tested on the untouched round 4 (smoothed accuracy):
+**Electrode layout** (`channel_selection.py`): layouts compared with cross-validation
+on rounds 1-3 and tested on the untouched round 4 (smoothed accuracy, simpler fixed models):
 
-| Electrodes | Calibrated user | New user |
-|------------|----------------:|---------:|
-| NeuroPawn 8 (F3, Fz, F4, C3, C4, Pz, O1, O2) | 70.6% | 71.7% |
-| Greedy best 8 (T6, FP2, T3, TP8, Cz, P3, Pz, F7) | **81.4%** | 79.0% |
-| All 29 EEG | 78.7% | **79.3%** |
-| EOG only (HEOL, HEOR) | 66.0% | 63.3% |
+| Layout | CV calibrated | CV new user | Round 4 calibrated | Round 4 new user | Round 4, eye signal removed |
+|--------|------:|------:|------:|------:|------:|
+| Attention layout (F3, Fz, F4, C3, C4, Pz, O1, O2) | 69.8% | 64.5% | 70.6% | 71.7% | 70.7% / 72.0% |
+| **Final layout (F3, Fz, F4, P3, P4, Pz, O1, O2)** | 71.4% | 69.0% | 73.7% | 73.3% | 73.5% / 72.6% |
+| First layout, phases 1-2 (Fz, F3, F4, Cz, C4, P3, T6, O1) | 72.2% | 69.8% | 77.2% | 75.2% | 75.0% / 74.9% |
+| Greedy best 8 (T6, FP2, T3, TP8, Cz, P3, Pz, F7) | 77.5% | 76.4% | 81.4% | 79.0% | 76.8% / 76.5% |
+| All 29 EEG | 74.6% | 73.7% | 78.7% | 79.3% | 74.0% / 78.8% |
+| EOG only (HEOL, HEOR) | 67.5% | 65.5% | 66.0% | 63.3% | - |
 
-The eye-movement channels alone are well above chance. With the eye signal regressed
-out of every electrode (`--remove-eog`), the NeuroPawn results do not change (70.7% /
-72.0%), but the best layout's advantage halves to about 5 points and is no longer
-significant: much of it came from eye activity. Several of the greedy picks (FP2, F7,
-T3, T6, TP8) are classic eye/muscle/auditory sites. The attentive task is a lecture
-video and the relaxed task a scenery video with music, so they differ in more than
-attention. The report recommends keeping the NeuroPawn layout, or moving C3/C4 to
-P3/P4 if the dry electrodes make good contact there (dry electrodes work best on
-hairless sites, which are exactly the eye/muscle-dominated ones).
+The eye-movement channels alone are well above chance, and the highest-scoring layouts
+lean on eye, muscle and auditory sites (FP2, F7, T3, T6, TP8): the attentive task is a
+lecture video and the relaxed task a scenery video with music, so they differ in more
+than attention. The final layout was chosen among research-backed attention sites
+(no frontopolar, eye-adjacent or temporal electrodes) by CV on rounds 1-3, and its
+results barely change when the eye signal is removed (`--remove-eog`). The NeuroPawn
+uses dry electrodes, which work best on hairless sites (the eye/muscle-dominated ones),
+so contact quality at P3/P4, Pz and O1/O2 needs checking on the real helmet.
 
-The first version of this project reported 66.9% / 58.0%, using the mislabelled
-columns and picking the best of 20 configurations by test accuracy. Here, no
-configuration is chosen on the test set.
+The first version of this project reported 66.9% / 58.0% with the first layout,
+picking the best of 20 configurations by test accuracy. Here, no configuration or
+layout is chosen on the test set.
 
 ## Project structure
 

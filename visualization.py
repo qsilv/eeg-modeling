@@ -157,19 +157,19 @@ def draw_confusion_matrices():
 
 # Earlier project phases, recorded from previous runs of this repository:
 #   phase 1 - original pipeline (1 s windows, no normalization, best of 20 configs
-#             picked by test accuracy), on the mislabelled columns
-#   phase 2 - this pipeline (smoothed accuracy) before the channel mapping was fixed
+#             picked by test accuracy), first layout (Fz, F3, F4, Cz, C4, P3, T6, O1)
+#   phase 2 - this pipeline (smoothed accuracy), same first layout
 # The final phase is read from results/metrics/summary.csv.
 EARLIER_PHASES = [
-    ('1. Original\npipeline', 0.669, 0.580),
-    ('2. Improved method\n(wrong electrodes)', 0.772, 0.737),
+    ('1. Original pipeline\n(first layout)', 0.669, 0.580),
+    ('2. Improved method\n(first layout)', 0.772, 0.737),
 ]
 
 
 def draw_phase_summary():
     summary = pd.read_csv(os.path.join(METRICS_FOLDER, 'summary.csv')).set_index('scenario')
     phases = EARLIER_PHASES + [(
-        '3. Final: correct\nNeuroPawn electrodes',
+        '3-4. Final: adjusted\nattention layout',
         summary.loc['subject_dependent', 'smoothed_accuracy_mean'],
         summary.loc['cross_subject', 'smoothed_accuracy_mean'])]
     baselines = (summary.loc['subject_dependent', 'baseline_acc_mean'],

@@ -24,16 +24,16 @@
 
 \section{Introduction and Motivation}
 
-I recently joined NeuraXtension, a student neuroscience club. The club is currently exploring projects involving brain-computer interfaces (BCIs), and one idea that came up was building an attention state classifier using electroencephalogram (EEG) data. This inspired the topic of my project: I wanted to investigate how well classical machine learning methods perform when constrained to the hardware specifications of the NeuroPawn, a budget consumer EEG helmet with 8 dry electrodes sampling at 125~Hz. The electrodes can be moved; its default layout is F3, Fz, F4, C3, C4, Pz, O1 and O2.
+I recently joined NeuraXtension, a student neuroscience club. The club is currently exploring projects involving brain-computer interfaces (BCIs), and one idea that came up was building an attention state classifier using electroencephalogram (EEG) data. This inspired the topic of my project: I wanted to investigate how well classical machine learning methods perform when constrained to the hardware specifications of the NeuroPawn, a budget consumer EEG helmet with 8 dry electrodes sampling at 125~Hz. The electrodes are not fixed: they can be moved to any position on the helmet, so choosing where to put them is part of the problem.
 
 Most published EEG classification research uses medical-grade equipment with 32--64 electrodes at high sampling rates. The question I set out to answer is whether classical ML techniques can still distinguish between focused and unfocused mental states when limited to just 8 channels and a low sampling rate.
 
-The project went through several phases, and each one changed my understanding of the results. This report follows them in order: the original pipeline (Phase~1), fixing the method (Phase~2), correcting the electrodes (Phase~3), understanding why some people are harder to read (Phase~4), and testing other electrode positions and the role of eye movements (Phase~5). Figure~\ref{fig:phases} summarizes the main numbers.
+The project went through several phases, and each one changed my understanding of the results. This report follows them in order: the original pipeline (Phase~1), fixing the method (Phase~2), adjusting the electrode locations (Phase~3), the final results (Phase~4), and understanding why some people are harder to read (Phase~5). Figure~\ref{fig:phases} summarizes the main numbers.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{results/figures/phase_summary.png}
-    \caption{Mean test accuracy across the main phases of the project. Phase~3 is the final, trustworthy result for the NeuroPawn electrodes.}
+    \caption{Mean test accuracy across the phases of the project. The final result uses the electrode layout chosen in Phase~3.}
     \label{fig:phases}
 \end{figure}
 
@@ -49,13 +49,13 @@ Each subject completed four rounds, and each round contains one trial of each st
     \item \textbf{Relaxed} (\texttt{r}, 5 minutes): watch a scenery video with relaxing music.
     \item \textbf{Neutral} (\texttt{n}, 1 minute): watch a blank video.
 \end{itemize}
-Attentive trials are labelled \emph{focused} (1); neutral and relaxed trials are labelled \emph{unfocused} (0). About 46\% of the recorded time is ``focused''. The recording used 32 channels: 29 EEG electrodes, a reference electrode (CPz), and two horizontal eye-movement (EOG) channels.
+Attentive trials are labelled \emph{focused} (1); neutral and relaxed trials are labelled \emph{unfocused} (0). About 46\% of the recorded time is ``focused''. The recording used 32 channels: 29 EEG electrodes, a reference electrode (CPz), and two horizontal eye-movement (EOG) channels. Because all 29 EEG positions were recorded, I can simulate any 8-electrode NeuroPawn layout by keeping only those 8 channels.
 
 \section{The Pipeline}
 
 The final pipeline has four steps, each its own script.
 
-\textbf{Preprocessing} (\texttt{data\_processing.py}). For each trial, keep the 8 NeuroPawn electrodes, downsample from 500~Hz to 125~Hz (\texttt{scipy.signal.decimate}, which applies an anti-aliasing filter first), and band-pass filter between 0.5 and 45~Hz (4th-order Butterworth, zero-phase) to remove slow drift and high-frequency noise. Each trial is saved as one continuous signal.
+\textbf{Preprocessing} (\texttt{data\_processing.py}). For each trial, keep the 8 electrodes of the chosen layout, downsample from 500~Hz to 125~Hz (\texttt{scipy.signal.decimate}, which applies an anti-aliasing filter first), and band-pass filter between 0.5 and 45~Hz (4th-order Butterworth, zero-phase) to remove slow drift and high-frequency noise. Each trial is saved as one continuous signal.
 
 \textbf{Windows and features} (\texttt{feature\_extraction.py}). Each trial is cut into 4-second windows that overlap by half. From each window I extract 11 features per electrode (88 in total):
 \begin{itemize}
@@ -66,7 +66,7 @@ The final pipeline has four steps, each its own script.
 
 \textbf{Training and evaluation} (\texttt{model\_training.py}). Two scenarios:
 \begin{itemize}
-    \item \textbf{Subject-dependent (calibrated user)}: train on a person's rounds 1--3, test on their round 4.
+    \item \textbf{Subject-dependent (calibrated user)}: train on rounds 1--3 (the person's own, optionally together with other people's), test on the person's round 4.
     \item \textbf{Cross-subject (new user)}: train on 19 people, test on the one left out, repeated for all 20.
 \end{itemize}
 Three ideas from Phase~2 are built in: each person's features are normalized against their own average, the model is chosen without looking at the test data, and the predictions are averaged over the last 5 seconds.
@@ -75,7 +75,7 @@ Three ideas from Phase~2 are built in: each person's features are normalized aga
 
 \section{Phase 1: The Original Pipeline}
 
-The first version used 1-second windows and 12 features per electrode. It tested four classifiers (KNN, Random Forest, Decision Tree, LightGBM) with five feature-selection methods (none, ANOVA, feature importance, linear correlation, PCA). The best combinations reached \textbf{66.9\%} for calibrated users (LightGBM, all features) and \textbf{58.0\%} for new users (Random Forest with correlation-based selection).
+The first version used the electrode layout Fz, F3, F4, Cz, C4, P3, T6 and O1 (the ``first layout''), 1-second windows and 12 features per electrode. It tested four classifiers (KNN, Random Forest, Decision Tree, LightGBM) with five feature-selection methods (none, ANOVA, feature importance, linear correlation, PCA). The best combinations reached \textbf{66.9\%} for calibrated users (LightGBM, all features) and \textbf{58.0\%} for new users (Random Forest with correlation-based selection).
 
 Looking back, this version had several problems:
 \begin{itemize}
@@ -83,12 +83,12 @@ Looking back, this version had several problems:
     \item \textbf{No normalization between people.} EEG amplitude differs a lot from person to person, which mostly hurts new users.
     \item \textbf{1-second windows are noisy.} One second is too short to measure slow rhythms like delta and theta reliably.
     \item \textbf{Overclaims.} The report said overlapping windows ``doubled'' the usable data. Overlapping windows share half their samples, so they add no new information.
-    \item \textbf{Wrong electrodes.} Not discovered until Phase~3: the code read the wrong columns from the data files.
+    \item \textbf{The electrode layout was never questioned.} Since the NeuroPawn's electrodes can be moved, where they go is a design choice that should be tested (Phase~3).
 \end{itemize}
 
 \section{Phase 2: Fixing the Method}
 
-The second phase rebuilt the method. Each change was tested with cross-validation on training data only:
+The second phase rebuilt the method, still with the first layout. Each change was tested with cross-validation on training data only:
 \begin{itemize}
     \item \textbf{Per-subject normalization.} Each person's features are z-scored with that person's own mean and standard deviation. For a new user this needs a short recording but no labels. On its own, this raised new-user accuracy from 57.4\% to 61.8\%.
     \item \textbf{Longer windows.} 1~s, 2~s and 4~s windows were compared; 4~s was clearly best in both scenarios (Table~\ref{tab:windows}).
@@ -100,59 +100,118 @@ The second phase rebuilt the method. Each change was tested with cross-validatio
 
 \begin{table}[H]
 \centering
-\caption{Window length comparison: cross-validated accuracy on rounds 1--3 (the test round was not used). ``Smoothed'' averages predictions over 5~s.}
+\caption{Window length comparison with the first layout: cross-validated accuracy on rounds 1--3 (the test round was not used). ``Smoothed'' averages predictions over 5~s.}
 \label{tab:windows}
 \begin{tabular}{lcccc}
 \toprule
  & \multicolumn{2}{c}{Calibrated user} & \multicolumn{2}{c}{New user} \\
 Window & Raw & Smoothed & Raw & Smoothed \\
 \midrule
-1 s & 60.9\% & 64.7\% & 59.6\% & 66.2\% \\
-2 s & 62.1\% & 65.2\% & 61.0\% & 67.1\% \\
-4 s & \textbf{64.8\%} & \textbf{66.3\%} & \textbf{65.3\%} & \textbf{69.3\%} \\
+1 s & 61.8\% & 66.8\% & 60.8\% & 70.0\% \\
+2 s & 63.8\% & 67.9\% & 63.1\% & 70.6\% \\
+4 s & \textbf{68.5\%} & \textbf{70.6\%} & \textbf{67.6\%} & \textbf{71.6\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-With these changes, accuracy rose to \textbf{77.2\%} for calibrated users and \textbf{73.7\%} for new users. These numbers turned out to be for the wrong electrodes.
+With these changes, accuracy with the first layout rose to \textbf{77.2\%} for calibrated users and \textbf{73.7\%} for new users. The next question was whether the electrodes were in the right places.
 
-\section{Phase 3: Correcting the Electrodes (Final Results)}
+\section{Phase 3: Adjusting the Electrode Locations}
 
-The MEMA files contain 32 unlabeled columns. Using the dataset's channel-to-electrode table, I found that the columns read so far were \textbf{Fz, F3, F4, Cz, C4, P3, T6, O1}, not the NeuroPawn's F3, Fz, F4, C3, C4, Pz, O1, O2: three of the eight were wrong. I checked the table against the signals: every electrode correlates most strongly with its physical neighbours (for example F3 with FC3, O1 with Oz). The table also showed that column 18 is the reference and columns 31--32 are eye-movement channels.
+Because the NeuroPawn's electrodes can be moved, I tested where they should go. A good layout has to do two things: score well on this data, and actually measure attention, not something else that happens to differ between the tasks.
 
-After fixing the columns and rerunning everything, these are the final results for the real NeuroPawn electrodes (Table~\ref{tab:results}).
+\subsection{What attention research says}
+
+The best-established EEG markers of focused attention are \emph{frontal midline theta} (Fz, FCz), which rises with concentration; \emph{posterior alpha} (Pz, P3/P4, O1/O2), which drops when engaged and rises when relaxed; and the \emph{fronto-parietal attention network}, with parietal sites such as P3/P4. Electrodes at the forehead (FP1/FP2), beside the eyes (F7/F8) and on the sides of the head (T3--T6, TP7/TP8) are not attention sites. They are where eye movements, jaw and scalp muscles, and sound processing show up most strongly.
+
+\subsection{Layouts compared}
+
+\texttt{channel\_selection.py} compares layouts on all 29 recorded EEG electrodes. It includes a ``greedy'' search that builds a layout one electrode at a time, each time adding the electrode that helps most in cross-validation on rounds 1--3. Each layout is then tested on round~4, which none of these choices used. The two eye-movement channels are tested on their own, and every comparison is repeated after removing the eye-movement signal from all electrodes.
 
 \begin{table}[H]
 \centering
-\caption{Final test results with the NeuroPawn electrodes, mean $\pm$ standard deviation over 20 subjects. ``Raw'' scores single 4~s windows; ``smoothed'' averages the last 5~s.}
+\caption{Electrode layouts: cross-validated accuracy on rounds 1--3 (used for choosing) and round-4 test accuracy on the original signal and with the eye-movement signal removed (smoothed accuracy, mean over 20 subjects). These comparisons use simpler fixed models than the final pipeline.}
+\label{tab:channels}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lcccccc}
+\toprule
+ & \multicolumn{2}{c}{CV, rounds 1--3} & \multicolumn{2}{c}{Round 4} & \multicolumn{2}{c}{Round 4, eyes removed} \\
+Layout & Calib. & New & Calib. & New & Calib. & New \\
+\midrule
+Attention layout: F3, Fz, F4, C3, C4, Pz, O1, O2 & 69.8\% & 64.5\% & 70.6\% & 71.7\% & 70.7\% & 72.0\% \\
+\textbf{Final layout: F3, Fz, F4, P3, P4, Pz, O1, O2} & \textbf{71.4\%} & \textbf{69.0\%} & \textbf{73.7\%} & \textbf{73.3\%} & \textbf{73.5\%} & \textbf{72.6\%} \\
+First layout: Fz, F3, F4, Cz, C4, P3, T6, O1 & 72.2\% & 69.8\% & 77.2\% & 75.2\% & 75.0\% & 74.9\% \\
+Greedy best 8: T6, FP2, T3, TP8, Cz, P3, Pz, F7 & 77.5\% & 76.4\% & 81.4\% & 79.0\% & 76.8\% & 76.5\% \\
+All 29 EEG electrodes & 74.6\% & 73.7\% & 78.7\% & 79.3\% & 74.0\% & 78.8\% \\
+Eye channels only (HEOL, HEOR) & 67.5\% & 65.5\% & 66.0\% & 63.3\% & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{results/figures/channel_selection.png}
+    \caption{Left: cross-validated accuracy as the greedy search adds electrodes. Right: the same score for 300 random 8-electrode layouts. The attention layout with C3/C4 ranks at the 19th percentile and the final layout at the 61st. The greedy set was chosen on this score, so its position is optimistic.}
+    \label{fig:channels}
+\end{figure}
+
+\subsection{What the comparison shows}
+
+\begin{itemize}
+    \item \textbf{Eye movements carry part of the signal.} The two eye-movement channels alone reach 63--66\%, well above the baselines: people moved their eyes differently during the attentive task.
+    \item \textbf{The highest-scoring layouts lean on eye, muscle and sound sites.} The greedy search picks T6, FP2, T3, TP8 and F7, which are exactly the sites research warns about, plus three good attention sites (Cz, P3, Pz). After the eye signal is removed, its lead over the attention layout roughly halves, to about 5 points, and is no longer statistically reliable (Wilcoxon $p \approx 0.11$). The first layout also contains a temporal site (T6).
+    \item \textbf{Why these sites help here.} The attentive task is a \emph{lecture with slides and speech}; the relaxed task is a \emph{scenery video with music}. Reading slides moves the eyes, and speech versus music is processed under the temporal electrodes. Those sites can partly tell \emph{which video} is playing rather than \emph{how focused} the person is, so their extra accuracy would not carry over to real use.
+    \item \textbf{Moving C3/C4 to P3/P4 helps.} C3 and C4 sit over motor cortex, the least relevant area for attention. Moving them to P3 and P4, over the parietal attention network, improved cross-validated accuracy in both scenarios (by 1.6 and 4.5 points). It also scored higher on round~4, and it did not depend on eye movements: its results barely change when the eye signal is removed.
+\end{itemize}
+
+\textbf{Choice.} I restricted the candidates to research-backed attention sites (no forehead, eye-adjacent or temporal electrodes) and picked between them by cross-validation on rounds 1--3. The winner is the \textbf{final layout: F3, Fz, F4, P3, P4, Pz, O1, O2}, which covers frontal, parietal and occipital attention sites. It is used for all results from here on.
+
+\subsection{The dry-electrode trade-off}
+
+The NeuroPawn uses dry electrodes, which affects where they can work well:
+\begin{itemize}
+    \item \textbf{Hair is the main obstacle.} Without gel, dry electrodes make poor contact through hair, so hairless sites (the forehead and behind the ears) give much cleaner recordings. This is why many consumer headsets place their electrodes there.
+    \item \textbf{The easy sites are the misleading ones.} The forehead and temples are exactly where eye and muscle activity dominate. The attention sites in the final layout are under hair, where dry contact is hardest.
+    \item \textbf{Contact quality comes first.} A well-seated electrode is worth more than a perfect position. I would check each channel's signal quality (or impedance, if the software reports it) before every recording, and use comb or spring-pin tips at the back of the head if available.
+    \item \textbf{Expect lower accuracy.} The MEMA recordings used wet, research-grade electrodes, so the results here are an upper estimate for a dry helmet. Per-subject normalization and smoothing should matter even more on noisier data.
+\end{itemize}
+
+\section{Phase 4: Final Results}
+
+With the final layout (F3, Fz, F4, P3, P4, Pz, O1, O2), I reran the whole pipeline: window comparison (4~s was again best), model selection and testing. Table~\ref{tab:results} shows the final results.
+
+\begin{table}[H]
+\centering
+\caption{Final test results with the final layout, mean $\pm$ standard deviation over 20 subjects. ``Raw'' scores single 4~s windows; ``smoothed'' averages the last 5~s.}
 \label{tab:results}
 \begin{tabular}{llccc}
 \toprule
 Scenario & Output & Accuracy & Balanced acc. & Macro F1 \\
 \midrule
 Calibrated user & Baseline & 55.1\% & 50.0\% & -- \\
- & Raw window & 69.0 $\pm$ 11.7\% & 69.9 $\pm$ 11.2\% & 0.680 \\
- & Smoothed & \textbf{70.6 $\pm$ 12.9\%} & \textbf{71.7 $\pm$ 12.5\%} & \textbf{0.694} \\
+ & Raw window & 70.6 $\pm$ 9.7\% & 71.0 $\pm$ 9.5\% & 0.701 \\
+ & Smoothed & \textbf{75.1 $\pm$ 10.6\%} & \textbf{75.6 $\pm$ 10.2\%} & \textbf{0.744} \\
 \midrule
 New user & Baseline & 52.4\% & 50.0\% & -- \\
- & Raw window & 65.3 $\pm$ 7.2\% & 65.2 $\pm$ 7.3\% & 0.652 \\
- & Smoothed & \textbf{69.4 $\pm$ 8.8\%} & \textbf{69.3 $\pm$ 8.8\%} & \textbf{0.693} \\
+ & Raw window & 68.5 $\pm$ 9.6\% & 68.5 $\pm$ 9.7\% & 0.685 \\
+ & Smoothed & \textbf{73.0 $\pm$ 11.3\%} & \textbf{73.0 $\pm$ 11.4\%} & \textbf{0.729} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The models chosen by cross-validation were:
 \begin{itemize}
-    \item \textbf{Calibrated user}: shrinkage LDA, a simple straight-line classifier, on all 88 features. With only about 1{,}000 training windows per person, a simple model is hard to beat.
-    \item \textbf{New user}: an ensemble of logistic regression, random forest and LightGBM in 17 of the 20 folds, all four models in 2, and a random forest alone in 1.
+    \item \textbf{Calibrated user}: LightGBM (500 trees) trained on rounds 1--3 of all 20 people, each normalized against their own average. It never sees round~4. It was narrowly ahead of models trained on each person's data alone (71.7\% vs.\ 71.5\% in cross-validation).
+    \item \textbf{New user}: an ensemble in all 20 folds (all four models in 11 folds, LDA + LightGBM in 9). In cross-validation, the best ensemble scored 69.7\% against 69.3\% for the best single model.
 \end{itemize}
 
-Accuracy is lower than in Phase~2 because the NeuroPawn electrodes carry less useful information for this dataset than the mislabelled set (Phase~5 shows why). Compared with Phase~1, the final numbers are 3.7 points higher for calibrated users and 11.4 points higher for new users. They were also reached without looking at the test data.
+Compared with Phase~1, the final numbers are 8.2 points higher for calibrated users and 15.0 points higher for new users, and they were reached without looking at the test data. They are slightly below the first layout's Phase~2 results (77.2\% and 73.7\%), whose extra accuracy came partly from the temporal electrode T6 (Phase~3).
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{results/figures/per_subject.png}
-    \caption{Test accuracy per subject. Black marks show the majority-class baseline.}
+    \caption{Test accuracy per subject, final layout. Black marks show the majority-class baseline.}
     \label{fig:subjects}
 \end{figure}
 
@@ -163,90 +222,34 @@ Accuracy is lower than in Phase~2 because the NeuroPawn electrodes carry less us
     \label{fig:confusion}
 \end{figure}
 
-\section{Phase 4: Why Some People Are Harder to Read}
+\section{Phase 5: Why Some People Are Harder to Read}
 
-Accuracy varies a lot between people (Figure~\ref{fig:subjects}): from 43\% to 91\% for calibrated users and from 55\% to 85\% for new users. All 20 people are above the baseline as new users; as calibrated users, subjects 5, 8 and 16 are not. \texttt{subject\_diagnostics.py} looks for the reasons (Figure~\ref{fig:diagnostics}). With only 20 people, these patterns are hints, not proof.
+Accuracy varies a lot between people (Figure~\ref{fig:subjects}): from 57\% to 95\% for calibrated users and from 53\% to 91\% for new users. Every person is above the baseline in both scenarios, but some only barely. \texttt{subject\_diagnostics.py} looks for the reasons (Figure~\ref{fig:diagnostics}). With only 20 people, these patterns are hints, not proof.
 
 \begin{itemize}
-    \item \textbf{The common pattern.} For 80--90\% of people, the attentive task shows more theta activity over the back of the head (O1, O2) and higher theta/alpha ratios.
-    \item \textbf{Some people's states just look alike.} How different focused and unfocused windows look for a person (``signal strength'') closely tracks their accuracy (correlation 0.79 for calibrated users, 0.64 for new users).
-    \item \textbf{Patterns that change during the session.} For calibrated users, the strongest predictor is whether the person's pattern in round~4 matches rounds 1--3 (correlation 0.71). For subjects 9 and 16 it even flips, so their own model fails while a model trained on others does better. Subject~15 only becomes readable halfway through the session.
-    \item \textbf{Unusual people.} Subjects 3, 10, 11 and 12 reach 75--91\% with their own model but only 55--68\% with a model trained on others: their pattern differs from the crowd.
+    \item \textbf{The common pattern.} For 80--95\% of people, the attentive task shows more theta activity at the parietal and occipital electrodes (P3, P4, O1, O2) and higher theta/alpha and theta/beta ratios at P3 and P4.
+    \item \textbf{Some people's states just look alike.} How different focused and unfocused windows look for a person (``signal strength'') closely tracks their accuracy (correlation 0.81 for calibrated users, 0.70 for new users). Subjects 1, 8, 16 and 19 have the weakest signal.
+    \item \textbf{Unusual people.} How closely a person's pattern matches everyone else's predicts new-user accuracy (correlation 0.71). Subjects 3, 10 and 11 reach 70--95\% as calibrated users but only 59--66\% as new users: their pattern differs from the crowd.
+    \item \textbf{Patterns that change during the session.} Whether a person's pattern in round~4 matches rounds 1--3 predicts calibrated-user accuracy (correlation 0.58). For subjects 9 and 16 the pattern even reverses, and both stay in the 60s. Subject~15 only becomes readable halfway through the session: about 45--57\% when round 1 or 2 is held out, about 90\% for rounds 3--4.
     \item \textbf{Noise was not the explanation.} Noise bursts, muscle activity and slow frontal activity were not clearly related to accuracy.
 \end{itemize}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{results/figures/subject_diagnostics.png}
-    \caption{Left: signal strength vs.\ calibrated-user accuracy. Middle: how typical a person's pattern is vs.\ new-user accuracy. Right: accuracy for each person when each round is held out in turn.}
+    \caption{Left: signal strength vs.\ calibrated-user accuracy. Middle: how typical a person's pattern is vs.\ new-user accuracy. Right: accuracy for each person when each round is held out in turn (per-person LDA).}
     \label{fig:diagnostics}
 \end{figure}
-
-\section{Phase 5: Electrode Placement and Eye Movements}
-
-The NeuroPawn layout is adjustable, so I asked whether a different set of 8 electrodes would work better. \texttt{channel\_selection.py} builds a set one electrode at a time, each time adding the electrode that helps most (``greedy'' selection), using rounds 1--3 only. It then tests on round~4, which the search never saw. I also tested the two eye-movement channels on their own, and repeated the whole search after removing the eye-movement signal from every electrode.
-
-\begin{table}[H]
-\centering
-\caption{Round-4 test accuracy (smoothed) for different electrode sets, on the original signal and after the horizontal eye-movement signal is removed from every electrode. The simpler fixed models used here make the NeuroPawn numbers slightly different from Table~\ref{tab:results}.}
-\label{tab:channels}
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lcccc}
-\toprule
- & \multicolumn{2}{c}{Original signal} & \multicolumn{2}{c}{Eye signal removed} \\
-Electrodes & Calibrated & New user & Calibrated & New user \\
-\midrule
-NeuroPawn 8 (F3, Fz, F4, C3, C4, Pz, O1, O2) & 70.6\% & 71.7\% & 70.7\% & 72.0\% \\
-Best 8 found (T6, FP2, T3, TP8, Cz, P3, Pz, F7) & \textbf{81.4\%} & \textbf{79.0\%} & 76.8\% & 76.5\% \\
-All 29 EEG electrodes & 78.7\% & 79.3\% & 74.0\% & 78.8\% \\
-Eye channels only (HEOL, HEOR) & 66.0\% & 63.3\% & -- & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{results/figures/channel_selection.png}
-    \caption{Left: cross-validated accuracy as the greedy search adds electrodes (original signal). Right: the same score for 300 random 8-electrode layouts; the NeuroPawn layout ranks at the 19th percentile. The greedy set was chosen on this score, so its position is optimistic; Table~\ref{tab:channels} is the fair comparison.}
-    \label{fig:channels}
-\end{figure}
-
-\textbf{What the numbers say.}
-\begin{itemize}
-    \item On the original signal, the best 8 electrodes beat the NeuroPawn layout by 10.7 points for calibrated users and 7.3 for new users, a reliable difference across people (Wilcoxon $p = 0.002$ and $0.009$).
-    \item \textbf{The eye-movement channels alone reach 63--66\%}, well above the baselines, so people moved their eyes differently during the attentive task.
-    \item After removing the eye-movement signal, the NeuroPawn results do not change, but the advantage of the best layout roughly halves (to about 5 points) and is no longer statistically reliable ($p \approx 0.11$). Much of that advantage came from eye activity.
-\end{itemize}
-
-\textbf{Do the chosen electrodes make sense for attention?} Attention research points to a few well-established markers: \emph{frontal midline theta} (Fz, FCz), which rises with concentration; \emph{posterior alpha} (Pz, P3/P4, O1/O2), which drops when engaged and rises when relaxed; and the \emph{fronto-parietal attention network}, with parietal sites such as P3/P4. Against that:
-\begin{itemize}
-    \item \textbf{Cz, P3 and Pz} fit attention research well.
-    \item \textbf{FP2} (just above the eye) and \textbf{F7} (beside the left eye) are classic eye-movement sites.
-    \item \textbf{T3, T6 and TP8} (the sides of the head) sit over the jaw muscles and the hearing area of the brain. They pick up muscle tension, sideways eye movements and sound.
-\end{itemize}
-
-The tasks explain why these sites help: the attentive task is a \emph{lecture with slides and speech}, while the relaxed task is a \emph{scenery video with music}. Reading slides moves the eyes, and speech versus music is processed under the temporal electrodes. A model can therefore partly tell \emph{which video} is playing rather than \emph{how focused} the person is. This is a limitation of the dataset design, not of the NeuroPawn layout.
-
-\textbf{Recommendation for the NeuroPawn.} The NeuroPawn layout is already a sensible, research-based attention montage, and its results do not depend on eye movements. I would not move electrodes to the forehead or temples based on this dataset. A change supported by both the research and this data is moving \textbf{C3/C4} (over motor cortex, the least relevant to attention) to \textbf{P3/P4} (parietal attention network), while keeping Fz, Pz, O1 and O2.
-
-\textbf{The dry-electrode trade-off.} The NeuroPawn uses dry electrodes, which changes the practical picture:
-\begin{itemize}
-    \item \textbf{Hair is the main obstacle.} Without gel, dry electrodes make poor contact through hair, so hairless sites (the forehead and behind the ears) give much cleaner recordings. This is why many consumer headsets place their electrodes there.
-    \item \textbf{The easy sites are the misleading ones.} The forehead and temples are exactly where eye and muscle activity dominate (Phase~5). The sites that matter most for attention research (Fz, Cz, Pz, P3/P4, O1/O2) are under hair, where dry contact is hardest.
-    \item \textbf{Contact quality comes first.} A well-seated electrode at a second-best site is more useful than a poorly seated one at the ideal site. I would check each channel's signal quality (or impedance, if the software reports it) before every recording, and use comb or spring-pin tips at the back of the head if available. If P3/P4 cannot make good contact, keeping C3/C4 is the safer choice.
-    \item \textbf{Expect lower accuracy.} The MEMA recordings used wet, research-grade electrodes, so the 70\% figures here are an upper estimate for a dry helmet. Per-subject normalization and smoothing should matter even more on noisier data.
-\end{itemize}
 
 \section{Summary of Findings}
 
 \begin{enumerate}
-    \item \textbf{Final result:} with the NeuroPawn electrodes, 70.6\% for a calibrated user and 69.4\% for a new user, against baselines of 55.1\% and 52.4\%.
+    \item \textbf{Final result:} with the final layout (F3, Fz, F4, P3, P4, Pz, O1, O2), 75.1\% for a calibrated user and 73.0\% for a new user, against baselines of 55.1\% and 52.4\%.
     \item \textbf{What helped most:} normalizing each person's features against their own average, 4-second windows, and averaging predictions over a few seconds. The choice of classifier mattered little.
-    \item \textbf{Honest evaluation matters:} choosing models without looking at the test data gives lower but trustworthy numbers.
-    \item \textbf{Check the basics:} a wrong column mapping went unnoticed through two phases and changed every result.
-    \item \textbf{Eye movements and task design:} part of what separates the states in this dataset is eye movement and the content of the videos, not attention itself. The NeuroPawn layout is less affected by this than electrodes near the eyes and temples.
-    \item \textbf{People differ a lot:} accuracy ranges from chance to over 90\%, mainly depending on how distinct and how stable a person's pattern is.
+    \item \textbf{Electrode placement matters, but accuracy alone is a bad guide.} The highest-scoring layouts used sites that pick up eye movements, muscles and sound. Choosing among research-backed attention sites, P3/P4 instead of C3/C4 gave a clear gain.
+    \item \textbf{Honest evaluation matters:} choosing models and layouts without looking at the test data gives lower but trustworthy numbers.
+    \item \textbf{Eye movements and task design:} part of what separates the states in this dataset is eye movement and the content of the videos, not attention itself.
+    \item \textbf{People differ a lot:} accuracy ranges from about chance to over 90\%, mainly depending on how distinct and how stable a person's pattern is.
     \item \textbf{Skepticism of literature benchmarks:} some studies report 91.7\% (Aci et al., 2019) or 99.6\% (Wang \& Kim) on similar tasks. Such numbers often come from splitting overlapping windows of the same recording into training and test sets, which this project avoids by always holding out whole rounds or people.
 \end{enumerate}
 
@@ -256,15 +259,16 @@ The tasks explain why these sites help: the attentive task is a \emph{lecture wi
     \item \textbf{Task confounds.} The attentive and relaxed tasks differ in what is on screen and what is heard, not only in attention. A cleaner test would use the same video with different instructions.
     \item \textbf{Long blocks favour smoothing.} Each trial is one to five minutes of one state. In real use attention changes faster, so smoothing will help less and changes will be noticed a few seconds late.
     \item \textbf{Calibration recording.} Normalization for a new user needs a short recording of that person; here it used all of their data.
+    \item \textbf{Shared design choices.} The window length and the electrode layout were chosen by cross-validation on rounds 1--3 of all subjects. Round~4 was never used, so the calibrated-user results are clean, but for new users the held-out person's rounds 1--3 contributed to these two choices.
     \item \textbf{Offline processing.} The filter used here looks at future samples; a live system needs a filter that only uses the past.
     \item \textbf{Research-grade data.} The recordings used wet, research-grade electrodes. The NeuroPawn's dry electrodes will be noisier, especially through hair and when the helmet moves, so these results are an upper estimate.
 \end{itemize}
 
-Future work: record with the actual NeuroPawn helmet using tasks that differ only in attention (for example, the same video watched with ``focus'' versus ``zone out'' instructions), compare the default and P3/P4 layouts on that data while checking dry-electrode contact quality, add a short labelled calibration step for new users, and try deep learning models such as EEGNet.
+Future work: record with the NeuroPawn helmet in the final layout, using tasks that differ only in attention (for example, the same video watched with ``focus'' versus ``zone out'' instructions) and checking dry-electrode contact quality. Then add a short labelled calibration step for new users, and try deep learning models such as EEGNet.
 
 \section{Conclusion}
 
-This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating a budget 8-channel, 125~Hz headset. In its final form, classical methods reach 70.6\% accuracy for a calibrated user and 69.4\% for a new user. The most useful changes were simple statistical ones: comparing each person to themselves, using longer windows, and averaging over a few seconds. The project also showed how easily results can be inflated, by choosing models on the test set, by reading the wrong channels, or by a task design that lets eye movements and video content stand in for attention. For NeuraXtension, the NeuroPawn layout is a sound starting point. A short calibration recording per user and a parietal (P3/P4) electrode change are the most promising next steps. Because the helmet uses dry electrodes, good contact at the hair-covered attention sites matters more than squeezing out a better layout, and the real-world accuracy should be measured on the helmet's own recordings.
+This project built an end-to-end pipeline from 90~GB of raw EEG text files to trained classifiers, simulating a budget 8-electrode, 125~Hz dry-electrode helmet. In its final form, with electrodes at F3, Fz, F4, P3, P4, Pz, O1 and O2, classical methods reach 75.1\% accuracy for a calibrated user and 73.0\% for a new user, against baselines of 55.1\% and 52.4\%. The most useful changes were simple statistical ones: comparing each person to themselves, using longer windows, and averaging over a few seconds. Electrode placement also mattered, but the layouts that scored highest leaned on eye, muscle and sound signals that come from the task design rather than attention. Choosing among research-backed attention sites gave a layout that is both accurate and robust to eye movements. For NeuraXtension, the next steps are to set up the helmet in this layout, make sure the dry electrodes have good contact through hair, record a short calibration session for each user, and measure accuracy on the helmet's own recordings.
 
 \newpage
 \appendix
@@ -273,25 +277,24 @@ This project built an end-to-end pipeline from 90~GB of raw EEG text files to tr
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{results/figures/cv_model_comparison.png}
-    \caption{Cross-validated accuracy (training data only) of each model and feature-selection method, final electrodes. These scores were used to choose the models.}
+    \caption{Cross-validated accuracy (training data only) of each model and feature-selection method, final layout. These scores were used to choose the models.}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{results/figures/smoothing_curve.png}
-    \caption{Test accuracy for different smoothing lengths. Accuracy keeps rising with longer averaging, but the 5~s setting was fixed in advance; picking it from this curve would be tuning on the test set.}
+    \caption{Test accuracy for different smoothing lengths, final layout. Accuracy keeps rising with longer averaging, but the 5~s setting was fixed in advance; picking it from this curve would be tuning on the test set.}
 \end{figure}
-
 
 \newpage
 \section*{Project Experience Summary}
 
 \textbf{EEG Attention State Classifier: Brain-Computer Interface}
 \begin{itemize}
-    \item Built an end-to-end Python pipeline (NumPy, SciPy, scikit-learn, LightGBM) that turns 90~GB of raw 32-channel EEG into an 8-channel, 125~Hz attention classifier matching a budget consumer headset.
-    \item Reached 70.6\% accuracy for calibrated users and 69.4\% for new users (baselines 55.1\% and 52.4\%) using per-subject normalization, tuned windows, model ensembles and causal smoothing.
-    \item Selected models without test-set leakage using grouped and nested cross-validation, comparing 55 pipeline configurations for each of 20 held-out subjects.
-    \item Ran an electrode-placement study over 29 EEG channels and used the eye-movement channels to show that part of the apparent signal came from eye activity and task design rather than attention.
+    \item Built an end-to-end Python pipeline (NumPy, SciPy, scikit-learn, LightGBM) that turns 90~GB of raw 32-channel EEG into an 8-electrode, 125~Hz attention classifier matching a budget dry-electrode helmet.
+    \item Reached 75.1\% accuracy for calibrated users and 73.0\% for new users (baselines 55.1\% and 52.4\%), up from 66.9\% and 58.0\%, using per-subject normalization, tuned windows, model ensembles, causal smoothing and an adjusted electrode layout.
+    \item Selected models and electrode layouts without test-set leakage using grouped and nested cross-validation, comparing 55 pipeline configurations for each of 20 held-out subjects.
+    \item Ran an electrode-placement study over 29 EEG channels and used the eye-movement channels to show that the highest-scoring layouts relied partly on eye activity and task design; chose a research-backed layout instead.
     \item Parallelized the evaluation with joblib across 16 CPU threads, completing the full cross-subject model search in about 25 minutes.
 \end{itemize}
 

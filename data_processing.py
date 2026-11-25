@@ -1,8 +1,9 @@
 """
 data_processing.py - step 1: raw EEG -> cleaned continuous trials
 
-Reads every trial file in MEMA's For_graph folder, keeps the 8 channels that
-match the NeuroPawn headset, decimates 500 Hz -> 125 Hz and band-passes
+Reads every trial file in MEMA's For_graph folder, keeps the 8 electrodes of
+the chosen layout (the NeuroPawn's electrodes are movable; the layout was picked
+with channel_selection.py), decimates 500 Hz -> 125 Hz and band-passes
 0.5-45 Hz. Each trial is stored as one continuous float32 signal; windowing
 happens later in feature_extraction.py so the window length can be tuned.
 
@@ -43,8 +44,10 @@ COLUMN_ELECTRODES = [
 ]
 REFERENCE = 'CPz'
 
-# the 8 NeuroPawn positions
-CHANNEL_NAMES = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']
+# the 8-electrode layout used by the main pipeline: frontal (F3, Fz, F4),
+# parietal (P3, Pz, P4) and occipital (O1, O2) attention sites. It was chosen over
+# the same layout with C3/C4 by cross-validation on rounds 1-3 (channel_selection.py).
+CHANNEL_NAMES = ['F3', 'Fz', 'F4', 'P3', 'P4', 'Pz', 'O1', 'O2']
 CHANNEL_COLUMNS = [COLUMN_ELECTRODES.index(ch) for ch in CHANNEL_NAMES]
 
 # --all-channels: every column except the constant reference (29 EEG + 2 EOG)

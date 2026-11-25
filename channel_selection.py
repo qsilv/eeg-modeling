@@ -19,9 +19,10 @@ z-scoring, 5 s smoothing):
        subject-dependent: per-subject LDA trained on rounds 1-3, tested on round 4
        cross-subject:     random forest trained on the other 19 subjects (all
                           rounds), tested on the held-out subject's round 4
-     for the NeuroPawn 8, the greedy best 8, all 29 EEG electrodes, the 8
-     columns an earlier version of this project used by mistake, and the two
-     EOG channels alone (how much can eye movements alone tell apart the states?).
+     for the starting attention layout (C3/C4), the final layout used by the main
+     pipeline (the same with P3/P4), the first layout used in phases 1-2, the greedy
+     best 8, all 29 EEG electrodes, and the two EOG channels alone (how much can
+     eye movements alone tell apart the states?).
 
 --remove-eog regresses the two EOG channels out of every EEG channel first
 (per trial, least squares), so the search can only use activity that is not
@@ -53,9 +54,11 @@ from feature_extraction import build_feature_table, load_trials
 warnings.filterwarnings('ignore')
 
 TRIAL_FOLDER_ALL = os.path.join('processed_data', 'trials_all')
-NEUROPAWN = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']
-# columns 2, 3, 4, 12, 14, 23, 26, 28 - what the first version of the pipeline read
-PREVIOUS_MISLABELLED = ['Fz', 'F3', 'F4', 'Cz', 'C4', 'P3', 'T6', 'O1']
+# the NeuroPawn's electrodes are movable; these are the layouts compared
+ATTENTION_LAYOUT = ['F3', 'Fz', 'F4', 'C3', 'C4', 'Pz', 'O1', 'O2']   # starting point
+PARIETAL_LAYOUT = ['F3', 'Fz', 'F4', 'P3', 'P4', 'Pz', 'O1', 'O2']    # final (C3/C4 -> P3/P4)
+FIRST_LAYOUT = ['Fz', 'F3', 'F4', 'Cz', 'C4', 'P3', 'T6', 'O1']       # phases 1-2
+REFERENCE_SET = 'Attention layout (C3/C4)'
 EOG = ['HEOL', 'HEOR']
 WINDOW_S = 4
 MAX_CHANNELS = 16
@@ -204,11 +207,12 @@ def main():
 
     rng = np.random.default_rng(RANDOM_STATE)
     random_sets = [list(rng.choice(eeg, 8, replace=False)) for _ in range(N_RANDOM)]
-    named_sets = {'NeuroPawn 8': NEUROPAWN,
+    named_sets = {REFERENCE_SET: ATTENTION_LAYOUT,
+                  'Final layout (P3/P4)': PARIETAL_LAYOUT,
+                  'First layout (phases 1-2)': FIRST_LAYOUT,
                   'Greedy best 8': greedy.channels[7].split(','),
                   'Best 8 before EOG removal': ['T6', 'FP2', 'T3', 'TP8', 'Cz', 'P3', 'Pz', 'F7'],
                   f'All {len(eeg)} EEG': eeg,
-                  'Previous (mislabelled) 8': PREVIOUS_MISLABELLED,
                   'EOG only (HEOL, HEOR)': EOG}
     to_score = random_sets + list(named_sets.values())
     scores = Parallel(n_jobs=-1)(delayed(cv_score)(columns_for(s, all_channels), **data.args)
@@ -229,11 +233,11 @@ def main():
                                             if len(chans) == 8 else np.nan),
                'test_dep_mean': dep.mean(), 'test_dep_std': dep.std(),
                'test_cross_mean': cross.mean(), 'test_cross_std': cross.std()}
-        if name != 'NeuroPawn 8':
-            base_dep, base_cross = per_subject['NeuroPawn 8']
+        if name != REFERENCE_SET:
+            base_dep, base_cross = per_subject[REFERENCE_SET]
             for sc, a, b in (('dep', base_dep, dep), ('cross', base_cross, cross)):
                 diff = b - a
-                row[f'{sc}_vs_neuropawn'] = diff.mean()
+                row[f'{sc}_vs_attention_layout'] = diff.mean()
                 row[f'{sc}_n_better'] = int(np.sum(diff > 0))
                 row[f'{sc}_wilcoxon_p'] = wilcoxon(diff).pvalue if np.any(diff) else np.nan
         row.update({f'dep_{i + 1}': v for i, v in enumerate(dep)})
@@ -247,8 +251,8 @@ def main():
           f'median {random_df.score.median():.3f}, 95th pct {random_df.score.quantile(.95):.3f}')
     print('\nRound-4 test (smoothed accuracy):')
     cols = ['set', 'channels', 'cv_dep', 'cv_cross', 'cv_percentile_vs_random8',
-            'test_dep_mean', 'test_cross_mean', 'dep_vs_neuropawn', 'dep_n_better',
-            'dep_wilcoxon_p', 'cross_vs_neuropawn', 'cross_n_better', 'cross_wilcoxon_p']
+            'test_dep_mean', 'test_cross_mean', 'dep_vs_attention_layout', 'dep_n_better',
+            'dep_wilcoxon_p', 'cross_vs_attention_layout', 'cross_n_better', 'cross_wilcoxon_p']
     print(test[cols].round(3).to_string(index=False))
     draw(greedy, random_df, named_cv, f'All {len(eeg)} EEG', suffix)
     print(f'Total {time.time() - start:.0f} s')
@@ -259,7 +263,7 @@ def draw(greedy, random_df, named_cv, all_name, suffix=''):
     ax = axes[0]
     ax.plot(greedy.n_channels, greedy.dep_cv, 'o-', label='Subject-dependent CV')
     ax.plot(greedy.n_channels, greedy.cross_cv, 'o-', label='Cross-subject CV')
-    for name, color in (('NeuroPawn 8', 'k'), (all_name, 'gray')):
+    for name, color in ((REFERENCE_SET, 'k'), (all_name, 'gray')):
         ax.axhline(named_cv[name]['score'], color=color, ls=':',
                    label=f'{name} (mean of both CV scores)')
     for r in greedy.itertuples():
@@ -273,8 +277,10 @@ def draw(greedy, random_df, named_cv, all_name, suffix=''):
 
     ax = axes[1]
     ax.hist(random_df.score, bins=30, color='#9ecae1')
-    for name, color in (('NeuroPawn 8', 'k'), ('Greedy best 8', '#d62728')):
-        ax.axvline(named_cv[name]['score'], color=color, lw=2, label=name)
+    for name, color in ((REFERENCE_SET, 'k'), ('Final layout (P3/P4)', '#2ca02c'),
+                        ('Greedy best 8', '#d62728')):
+        if name in named_cv:
+            ax.axvline(named_cv[name]['score'], color=color, lw=2, label=name)
     ax.set_xlabel('CV score (mean of dependent and cross-subject)')
     ax.set_ylabel('Random 8-electrode sets')
     ax.set_title(f'{len(random_df)} random 8-electrode layouts')
